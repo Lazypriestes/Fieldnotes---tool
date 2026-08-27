@@ -227,6 +227,36 @@
   .worldnote .wn-h{font-family:ui-monospace,Menlo,monospace;font-size:8.5px;letter-spacing:.07em;color:#B08A3C;margin-bottom:3px}
   .app.layer-mindmap .worldnote{display:block}
 
+  /* page notes — connectable sticky notes that live on the canvas */
+  svg.conns{position:absolute;top:0;left:0;overflow:visible;z-index:5}
+  .conn{fill:none;stroke:var(--accent);stroke-width:1.6;opacity:.75;pointer-events:none}
+  .conn.temp{stroke-dasharray:5 4;opacity:.9}
+  .conn-hit{fill:none;stroke:transparent;stroke-width:12;pointer-events:stroke;cursor:pointer}
+  .pnote{position:absolute;width:184px;min-height:46px;z-index:6;box-sizing:border-box;
+    background:#FDF6D8;border:1px solid #E4D9A6;border-radius:7px;padding:9px 11px 10px;
+    font-size:12px;line-height:1.45;color:#4A4526;box-shadow:0 12px 26px -16px rgba(21,24,27,.5);cursor:grab}
+  .pnote.grabbing{cursor:grabbing}
+  .pnote.mm{display:none;border-left:3px solid #8B5CF6}
+  .app.layer-mindmap .pnote.mm{display:block}
+  .pnote .pn-tx{outline:none;min-height:20px}
+  .pnote .pn-tx:empty:before{content:attr(data-ph);color:#BCB183}
+  .pnote .pn-corner,.pnote .pn-del{position:absolute;top:3px;width:17px;height:17px;border-radius:4px;
+    display:flex;align-items:center;justify-content:center;color:#B0A46A;opacity:0;transition:opacity .12s}
+  .pnote .pn-corner{right:21px} .pnote .pn-del{right:3px;font-size:15px;line-height:1}
+  .pnote:hover .pn-corner,.pnote:hover .pn-del{opacity:1}
+  .pnote .pn-corner:hover{background:rgba(139,92,246,.16);color:#7A5CC7}
+  .pnote.mm .pn-corner{opacity:1;color:#8B5CF6}
+  .pnote .pn-del:hover{background:rgba(196,105,90,.14);color:#B04A3A}
+  .pnote .pn-corner svg{width:12px;height:12px}
+  .pdot{position:absolute;width:11px;height:11px;border-radius:50%;background:var(--accent);
+    border:2px solid var(--surface);opacity:0;transition:opacity .12s,transform .1s;cursor:crosshair;z-index:8}
+  .pnote:hover .pdot{opacity:.9} .pdot:hover{transform:scale(1.35);opacity:1}
+  .pdot.t{top:-6px;left:50%;margin-left:-5.5px} .pdot.b{bottom:-6px;left:50%;margin-left:-5.5px}
+  .pdot.l{left:-6px;top:50%;margin-top:-5.5px} .pdot.r{right:-6px;top:50%;margin-top:-5.5px}
+  :root[data-theme="dark"] .pnote{background:#2A2620;border-color:#4A4330;color:#E7DFC6}
+  :root[data-theme="dark"] .pnote .pn-tx:empty:before{color:#8A805E}
+  .node.linktarget{border-color:var(--accent)!important;box-shadow:0 0 0 3px var(--accent-soft)}
+
   .transport{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:7;
     display:flex;align-items:center;gap:13px;padding:7px 17px;
     background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:22px;
@@ -492,6 +522,7 @@
     <div class="viewport" id="viewport">
       <div class="world" id="world">
         <svg class="edges" id="edges"></svg>
+        <svg class="conns" id="conns"></svg>
         <div class="dropline" id="dropline"></div>
         <div class="annolayer" id="annolayer"><svg class="leads" id="leads"></svg></div>
       </div>
@@ -515,7 +546,7 @@
         </div>
         <div class="dsep"></div>
         <div class="dgrp">
-          <button class="dbtn live-act" data-act="note" aria-label="Add note">
+          <button class="dbtn" data-act="note" aria-label="Add note">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 3h6l4 4v10H5z"/><path d="M11 3v4h4M8 11h5M8 14h4"/></svg>
             <span class="dtip">Add note<b>N</b></span>
           </button>
@@ -635,6 +666,7 @@
 
   var NODES = [], INDEX = {}, ROOT = { id: '_root', children: [], collapsed: false, depth: -1, h: 0, y: 0 };
   var state = {}, selected = null, current = null, live = false, notes = [], timer = null, step = 0, hereTopic = 1;
+  var pageNotes = [];
   var seq = 0, editing = false, follow = true;
   var DUR = [], cumEnd = [], totalDur = 1, liveIdx = -1, viewIdx = -1, reviewing = false, tlDrag = false;
 
@@ -893,6 +925,7 @@
     svg.setAttribute('width', maxX + 40); svg.setAttribute('height', maxY + 40);
     drawEdges();
     layoutAnnos();
+    drawConns();
   }
 
   function drawEdges() {
@@ -951,10 +984,119 @@
     return { x: (cx - r.left - cam.x) / cam.z, y: (cy - r.top - cam.y) / cam.z };
   }
 
+  /* ================= page notes: connectable canvas notes ================= */
+  var conns = $('conns');
+  function noteVisible(note) { return !(note.mm && layerName !== 'mindmap'); }
+  function drawConns() {
+    if (!conns) return;
+    var parts = [];
+    pageNotes.forEach(function (note) {
+      if (!noteVisible(note)) return;
+      var w = note.el.offsetWidth || 184, h = note.el.offsetHeight || 46;
+      var nx = note.x + w / 2, ny = note.y + h / 2;
+      note.links.forEach(function (qid) {
+        var n = INDEX[qid]; if (!n || isHidden(n) || n.x == null) return;
+        var tx = n.x + W[n.depth] / 2, ty = n.y + n.h / 2;
+        var dx = Math.max(28, Math.abs(tx - nx) / 2), s = tx > nx ? 1 : -1;
+        var d = 'M' + nx + ' ' + ny + ' C' + (nx + s * dx) + ' ' + ny + ',' + (tx - s * dx) + ' ' + ty + ',' + tx + ' ' + ty;
+        parts.push('<path class="conn-hit" data-note="' + note.id + '" data-q="' + qid + '" d="' + d + '"/><path class="conn" d="' + d + '"/>');
+      });
+    });
+    conns.innerHTML = parts.join('');
+  }
+  conns.addEventListener('click', function (e) {
+    var hit = e.target.closest('.conn-hit'); if (!hit) return;
+    var note = pageNotes.filter(function (p) { return p.id === hit.dataset.note; })[0];
+    if (note) { note.links = note.links.filter(function (q) { return q !== hit.dataset.q; }); drawConns(); scheduleFileSave(); }
+  });
+
+  function wireNote(note) {
+    var el = note.el, tx = el.querySelector('.pn-tx');
+    tx.addEventListener('blur', function () { note.text = tx.textContent; scheduleFileSave(); });
+    tx.addEventListener('keydown', function (e) { if (e.key === 'Escape') tx.blur(); e.stopPropagation(); });
+    el.querySelector('.pn-corner').addEventListener('click', function (e) {
+      e.stopPropagation(); note.mm = !note.mm; el.classList.toggle('mm', note.mm);
+      el.querySelector('.pn-corner').title = note.mm ? 'On the mind map only — click to show everywhere' : 'Show only on the mind map';
+      drawConns(); scheduleFileSave();
+    });
+    el.querySelector('.pn-del').addEventListener('click', function (e) {
+      e.stopPropagation(); el.remove();
+      pageNotes = pageNotes.filter(function (p) { return p !== note; });
+      drawConns(); scheduleFileSave();
+    });
+    // drag a side dot -> connect to a question node
+    el.querySelectorAll('.pdot').forEach(function (dot) {
+      dot.addEventListener('pointerdown', function (ev) {
+        ev.stopPropagation(); ev.preventDefault();
+        var w = el.offsetWidth, h = el.offsetHeight, ax = note.x + w / 2, ay = note.y + h / 2;
+        function mv(e2) {
+          var p = toWorld(e2.clientX, e2.clientY);
+          var t = conns.querySelector('.conn.temp');
+          if (!t) { t = document.createElementNS('http://www.w3.org/2000/svg', 'path'); t.setAttribute('class', 'conn temp'); conns.appendChild(t); }
+          t.setAttribute('d', 'M' + ax + ' ' + ay + ' L' + p.x + ' ' + p.y);
+          var over = document.elementFromPoint(e2.clientX, e2.clientY);
+          document.querySelectorAll('.node.linktarget').forEach(function (m) { m.classList.remove('linktarget'); });
+          var nd = over && over.closest('.node[data-id]'); if (nd) nd.classList.add('linktarget');
+        }
+        function up(e2) {
+          document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up);
+          var t = conns.querySelector('.conn.temp'); if (t) t.remove();
+          document.querySelectorAll('.node.linktarget').forEach(function (m) { m.classList.remove('linktarget'); });
+          var over = document.elementFromPoint(e2.clientX, e2.clientY);
+          var nd = over && over.closest('.node[data-id]');
+          if (nd && note.links.indexOf(nd.dataset.id) < 0) { note.links.push(nd.dataset.id); scheduleFileSave(); }
+          drawConns();
+        }
+        document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up);
+      });
+    });
+    // drag the note body to move it
+    el.addEventListener('pointerdown', function (ev) {
+      if (ev.target.closest('.pdot,.pn-corner,.pn-del,.pn-tx')) return;
+      ev.stopPropagation();
+      var s0 = toWorld(ev.clientX, ev.clientY), x0 = note.x, y0 = note.y, moved = false;
+      el.setPointerCapture(ev.pointerId); el.classList.add('grabbing');
+      function mv(e2) {
+        var p = toWorld(e2.clientX, e2.clientY);
+        if (!moved && Math.abs(p.x - s0.x) < 3 && Math.abs(p.y - s0.y) < 3) return;
+        moved = true;
+        note.x = x0 + (p.x - s0.x); note.y = y0 + (p.y - s0.y);
+        el.style.left = note.x + 'px'; el.style.top = note.y + 'px'; drawConns();
+      }
+      function up() { el.classList.remove('grabbing'); el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); if (moved) scheduleFileSave(); else el.querySelector('.pn-tx').focus(); }
+      el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up);
+    });
+  }
+
+  function addPageNote(x, y, seed) {
+    var note = { id: (seed && seed.id) || ('pn' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36)),
+      x: x, y: y, text: (seed && seed.text) || '', mm: !!(seed && seed.mm), links: (seed && seed.links) ? seed.links.slice() : [] };
+    var el = document.createElement('div');
+    el.className = 'pnote' + (note.mm ? ' mm' : '');
+    el.style.left = x + 'px'; el.style.top = y + 'px';
+    el.innerHTML =
+      '<button class="pn-corner" title="' + (note.mm ? 'On the mind map only — click to show everywhere' : 'Show only on the mind map') + '"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2"/><circle cx="3" cy="3.5" r="1.3"/><circle cx="13" cy="3.5" r="1.3"/><circle cx="3" cy="12.5" r="1.3"/><circle cx="13" cy="12.5" r="1.3"/><path d="M6.5 6.6 4 4.2M9.5 6.6 12 4.2M6.5 9.4 4 11.8M9.5 9.4 12 11.8"/></svg></button>' +
+      '<button class="pn-del" title="Delete note">×</button>' +
+      '<div class="pn-tx" contenteditable="true" spellcheck="false" data-ph="Type a note…">' + esc(note.text) + '</div>' +
+      '<span class="pdot t"></span><span class="pdot r"></span><span class="pdot b"></span><span class="pdot l"></span>';
+    note.el = el; world.appendChild(el);
+    wireNote(note); pageNotes.push(note); drawConns();
+    if (!seed) { scheduleFileSave(); setTimeout(function () { el.querySelector('.pn-tx').focus(); }, 30); }
+    return note;
+  }
+  function addPageNoteCentered() {
+    var r = viewport.getBoundingClientRect();
+    var p = toWorld(r.left + viewport.clientWidth / 2, r.top + viewport.clientHeight / 2);
+    return addPageNote(p.x - 92, p.y - 24);
+  }
+  function serializeNote(n) { return { id: n.id, x: n.x, y: n.y, text: n.text, mm: n.mm, links: n.links }; }
+  function clearPageNotes() { pageNotes.forEach(function (n) { n.el.remove(); }); pageNotes = []; if (conns) conns.innerHTML = ''; }
+  function rebuildPageNotes(arr) { clearPageNotes(); (arr || []).forEach(function (s) { addPageNote(s.x, s.y, s); }); drawConns(); }
+
   /* ---------- pan & zoom ---------- */
   var pan = null;
   viewport.addEventListener('pointerdown', function (e) {
-    var ui = '.zoomctl,.caps,.anode,.sticky,.dock,.transport,.rater,.qnote,.livenote,.worldnote,.filemenu';
+    var ui = '.zoomctl,.caps,.anode,.sticky,.dock,.transport,.rater,.qnote,.livenote,.worldnote,.filemenu,.pnote,.conn-hit';
     var block = layerName === 'notes' ? ui : '.node,.fold,.ghost,' + ui;
     if (e.target.closest(block)) return;
     breakFollow();
@@ -1376,7 +1518,7 @@
     if (e.key.toLowerCase() === 'f' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); setFollow(!follow); return; }
     if (e.key.toLowerCase() === 'e' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); setEdit(!editing); return; }
     if (e.key.toLowerCase() === 's' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); cycleScene(); return; }
-    if (live && e.key.toLowerCase() === 'n' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); addLiveNote(); return; }
+    if (e.key.toLowerCase() === 'n' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); live ? addLiveNote() : addPageNoteCentered(); return; }
     if (live && e.key.toLowerCase() === 'q' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); addQuestion(); return; }
     if (live && e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); startRec(e.repeat); return; }
     if (!editing || !selected) return;
@@ -1458,9 +1600,10 @@
     addSticky(p.x - 93, p.y - 30);
   });
   viewport.addEventListener('dblclick', function (e) {
-    if (layerName !== 'notes' || e.target.closest('.sticky,.anode,.zoomctl,.caps')) return;
+    if (editing || layerName === 'mindmap') return;
+    if (e.target.closest('.node,.fold,.ghost,.pnote,.sticky,.anode,.zoomctl,.caps,.dock,.transport,.filemenu,.conn-hit,.rater,.qnote')) return;
     var p = toWorld(e.clientX, e.clientY);
-    addSticky(p.x, p.y);
+    addPageNote(p.x, p.y);            // notes are addable anytime, right on the canvas
   });
   var SCENES = ['tree', 'notes', 'mindmap'];
   function setLayer(name) {
@@ -1490,7 +1633,7 @@
     if (a) {
       if (a.dataset.act === 'edit') setEdit(!editing);
       else if (a.dataset.act === 'follow') setFollow(!follow);
-      else if (a.dataset.act === 'note') addLiveNote();
+      else if (a.dataset.act === 'note') { live ? addLiveNote() : addPageNoteCentered(); }
       else if (a.dataset.act === 'question') addQuestion();
       else if (a.dataset.act === 'record') { startRec(false); stopRec(); }
       return;
@@ -2362,7 +2505,7 @@
   }
   function saveActive() {
     var f = FILES.filter(function (x) { return x.id === ACTIVE; })[0];
-    if (f) { f.data = snap(); persistFiles(); }
+    if (f) { f.data = snap(); f.notes = pageNotes.map(serializeNote); persistFiles(); }
   }
   function scheduleFileSave() {
     if (!ACTIVE) return;
@@ -2385,6 +2528,7 @@
     clearSessionArt();
     selected = null;
     restore(f.data);
+    rebuildPageNotes(f.notes);
     ACTIVE = id;
     updateFileUI(); persistFiles();
     markHere(1);
@@ -2439,7 +2583,7 @@
       FILES = saved;
       ACTIVE = (savedActive && saved.some(function (f) { return f.id === savedActive; })) ? savedActive : saved[0].id;
       var f = FILES.filter(function (x) { return x.id === ACTIVE; })[0];
-      if (f) { selected = null; restore(f.data); }
+      if (f) { selected = null; restore(f.data); rebuildPageNotes(f.notes); }
     } else {
       ACTIVE = newId();
       FILES = [{ id: ACTIVE, name: 'industrial-design-cad-ai', data: snap() }];
