@@ -236,8 +236,13 @@
     background:#FDF6D8;border:1px solid #E4D9A6;border-radius:7px;padding:9px 11px 10px;
     font-size:12px;line-height:1.45;color:#4A4526;box-shadow:0 12px 26px -16px rgba(21,24,27,.5);cursor:grab}
   .pnote.grabbing{cursor:grabbing}
-  .pnote.mm{display:none;border-left:3px solid #8B5CF6}
-  .app.layer-mindmap .pnote.mm{display:block}
+  .pnote.mm{border-left:3px solid #8B5CF6}
+  .pnote.collapsed{width:16px;height:16px;min-height:0;padding:0;border:2px solid var(--surface);border-radius:50%;
+    background:#8B5CF6;box-shadow:0 3px 9px -2px rgba(139,92,246,.6);cursor:pointer;overflow:visible;
+    transition:width .12s,height .12s}
+  .pnote.collapsed > *{display:none!important}
+  .pnote.collapsed:hover{transform:scale(1.18)}
+  .conn.faint{stroke:#8B5CF6;opacity:.42;stroke-width:1.3}
   .pnote .pn-tx{outline:none;min-height:20px}
   .pnote .pn-tx:empty:before{content:attr(data-ph);color:#BCB183}
   .pnote .pn-corner,.pnote .pn-del{position:absolute;top:3px;width:17px;height:17px;border-radius:4px;
@@ -985,14 +990,16 @@
   }
 
   /* ================= page notes: connectable canvas notes ================= */
-  var conns = $('conns');
-  function noteVisible(note) { return !(note.mm && layerName !== 'mindmap'); }
+  var conns = $('conns'), noteBusy = false;
+  function updateCollapse(note) {                          // mm note off the mind map = a purple dot
+    note.el.classList.toggle('collapsed', note.mm && layerName !== 'mindmap' && !note.expanded);
+  }
   function drawConns() {
     if (!conns) return;
     var parts = [];
     pageNotes.forEach(function (note) {
-      if (!noteVisible(note)) return;
-      var w = note.el.offsetWidth || 184, h = note.el.offsetHeight || 46;
+      var collapsed = note.el.classList.contains('collapsed');
+      var w = collapsed ? 16 : (note.el.offsetWidth || 184), h = collapsed ? 16 : (note.el.offsetHeight || 46);
       var nx = note.x + w / 2, ny = note.y + h / 2;
       note.links.forEach(function (qid) {
         var n = INDEX[qid]; if (!n || isHidden(n) || n.x == null) return;
@@ -1002,7 +1009,8 @@
         var dx = Math.max(28, Math.abs(tx - nx) / 2);
         var c1x = nx + (tx > nx ? dx : -dx), c2x = leftSide ? tx - dx : tx + dx;
         var d = 'M' + nx + ' ' + ny + ' C' + c1x + ' ' + ny + ',' + c2x + ' ' + ty + ',' + tx + ' ' + ty;
-        parts.push('<path class="conn-hit" data-note="' + note.id + '" data-q="' + qid + '" d="' + d + '"/><path class="conn" d="' + d + '"/>');
+        parts.push('<path class="conn-hit" data-note="' + note.id + '" data-q="' + qid + '" d="' + d + '"/>' +
+                   '<path class="conn' + (collapsed ? ' faint' : '') + '" d="' + d + '"/>');
       });
     });
     conns.innerHTML = parts.join('');
@@ -1018,9 +1026,15 @@
     tx.addEventListener('blur', function () { note.text = tx.textContent; scheduleFileSave(); });
     tx.addEventListener('keydown', function (e) { if (e.key === 'Escape') tx.blur(); e.stopPropagation(); });
     el.querySelector('.pn-corner').addEventListener('click', function (e) {
-      e.stopPropagation(); note.mm = !note.mm; el.classList.toggle('mm', note.mm);
+      e.stopPropagation(); note.mm = !note.mm; note.expanded = false; el.classList.toggle('mm', note.mm);
       el.querySelector('.pn-corner').title = note.mm ? 'On the mind map only — click to show everywhere' : 'Show only on the mind map';
-      drawConns(); scheduleFileSave();
+      updateCollapse(note); drawConns(); scheduleFileSave();
+    });
+    // collapsed purple dot: click to expand, move the cursor away to shrink it back
+    el.addEventListener('mouseleave', function () {
+      if (!note.mm || layerName === 'mindmap' || !note.expanded || noteBusy) return;
+      if (document.activeElement && el.contains(document.activeElement)) return;
+      note.expanded = false; updateCollapse(note); drawConns();
     });
     el.querySelector('.pn-del').addEventListener('click', function (e) {
       e.stopPropagation(); el.remove();
@@ -1042,6 +1056,7 @@
           var nd = over && over.closest('.node[data-id]'); if (nd) nd.classList.add('linktarget');
         }
         function up(e2) {
+          noteBusy = false;
           document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up);
           var t = conns.querySelector('.conn.temp'); if (t) t.remove();
           document.querySelectorAll('.node.linktarget').forEach(function (m) { m.classList.remove('linktarget'); });
@@ -1050,15 +1065,17 @@
           if (nd && note.links.indexOf(nd.dataset.id) < 0) { note.links.push(nd.dataset.id); scheduleFileSave(); }
           drawConns();
         }
+        noteBusy = true;
         document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up);
       });
     });
-    // drag the note body to move it
+    // drag the note body to move it (or, when collapsed to a dot, click to expand)
     el.addEventListener('pointerdown', function (ev) {
+      if (el.classList.contains('collapsed')) { ev.stopPropagation(); note.expanded = true; updateCollapse(note); drawConns(); return; }
       if (ev.target.closest('.pdot,.pn-corner,.pn-del,.pn-tx')) return;
       ev.stopPropagation();
       var s0 = toWorld(ev.clientX, ev.clientY), x0 = note.x, y0 = note.y, moved = false;
-      el.setPointerCapture(ev.pointerId); el.classList.add('grabbing');
+      el.setPointerCapture(ev.pointerId); el.classList.add('grabbing'); noteBusy = true;
       function mv(e2) {
         var p = toWorld(e2.clientX, e2.clientY);
         if (!moved && Math.abs(p.x - s0.x) < 3 && Math.abs(p.y - s0.y) < 3) return;
@@ -1066,7 +1083,7 @@
         note.x = x0 + (p.x - s0.x); note.y = y0 + (p.y - s0.y);
         el.style.left = note.x + 'px'; el.style.top = note.y + 'px'; drawConns();
       }
-      function up() { el.classList.remove('grabbing'); el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); if (moved) scheduleFileSave(); else el.querySelector('.pn-tx').focus(); }
+      function up() { noteBusy = false; el.classList.remove('grabbing'); el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); if (moved) scheduleFileSave(); else el.querySelector('.pn-tx').focus(); }
       el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up);
     });
   }
@@ -1083,7 +1100,7 @@
       '<div class="pn-tx" contenteditable="true" spellcheck="false" data-ph="Type a note…">' + esc(note.text) + '</div>' +
       '<span class="pdot t"></span><span class="pdot r"></span><span class="pdot b"></span><span class="pdot l"></span>';
     note.el = el; world.appendChild(el);
-    wireNote(note); pageNotes.push(note); drawConns();
+    wireNote(note); pageNotes.push(note); updateCollapse(note); drawConns();
     if (!seed) { scheduleFileSave(); setTimeout(function () { el.querySelector('.pn-tx').focus(); }, 30); }
     return note;
   }
@@ -1624,6 +1641,7 @@
       : 'DRAG TO PAN · ⌥SCROLL TO ZOOM · E TO EDIT';
     X[2] = name === 'notes' ? X_NOTES : X_TREE;
     NODES.forEach(function (n) { if (n.depth === 2 && n.el) n.el.style.left = X[2] + 'px'; });
+    pageNotes.forEach(function (nt) { nt.expanded = false; updateCollapse(nt); });   // dots on tree, full on mind map
     layout();
   }
   function cycleScene() { setLayer(SCENES[(SCENES.indexOf(layerName) + 1) % SCENES.length]); }
