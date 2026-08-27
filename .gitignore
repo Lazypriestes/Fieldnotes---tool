@@ -16,3 +16,6 @@ diarization/transcript.db-shm
 
 # Editor / old backups
 canvas/_backups/
+
+# runtime pipeline log
+diarization/pipeline.log
