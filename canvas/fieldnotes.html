@@ -954,7 +954,7 @@
   /* ---------- pan & zoom ---------- */
   var pan = null;
   viewport.addEventListener('pointerdown', function (e) {
-    var ui = '.zoomctl,.caps,.anode,.sticky,.dock,.transport,.rater,.qnote,.livenote,.worldnote';
+    var ui = '.zoomctl,.caps,.anode,.sticky,.dock,.transport,.rater,.qnote,.livenote,.worldnote,.filemenu';
     var block = layerName === 'notes' ? ui : '.node,.fold,.ghost,' + ui;
     if (e.target.closest(block)) return;
     breakFollow();
