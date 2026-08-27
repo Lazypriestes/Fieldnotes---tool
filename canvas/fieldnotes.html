@@ -228,7 +228,7 @@
   .app.layer-mindmap .worldnote{display:block}
 
   /* page notes — connectable sticky notes that live on the canvas */
-  svg.conns{position:absolute;top:0;left:0;overflow:visible;z-index:5}
+  svg.conns{position:absolute;top:0;left:0;overflow:visible}
   .conn{fill:none;stroke:var(--accent);stroke-width:1.6;opacity:.75;pointer-events:none}
   .conn.temp{stroke-dasharray:5 4;opacity:.9}
   .conn-hit{fill:none;stroke:transparent;stroke-width:12;pointer-events:stroke;cursor:pointer}
@@ -996,9 +996,12 @@
       var nx = note.x + w / 2, ny = note.y + h / 2;
       note.links.forEach(function (qid) {
         var n = INDEX[qid]; if (!n || isHidden(n) || n.x == null) return;
-        var tx = n.x + W[n.depth] / 2, ty = n.y + n.h / 2;
-        var dx = Math.max(28, Math.abs(tx - nx) / 2), s = tx > nx ? 1 : -1;
-        var d = 'M' + nx + ' ' + ny + ' C' + (nx + s * dx) + ' ' + ny + ',' + (tx - s * dx) + ' ' + ty + ',' + tx + ' ' + ty;
+        var ncx = n.x + W[n.depth] / 2, ty = n.y + n.h / 2;
+        var leftSide = nx < ncx;                          // anchor to the node edge facing the note
+        var tx = leftSide ? n.x : n.x + W[n.depth];
+        var dx = Math.max(28, Math.abs(tx - nx) / 2);
+        var c1x = nx + (tx > nx ? dx : -dx), c2x = leftSide ? tx - dx : tx + dx;
+        var d = 'M' + nx + ' ' + ny + ' C' + c1x + ' ' + ny + ',' + c2x + ' ' + ty + ',' + tx + ' ' + ty;
         parts.push('<path class="conn-hit" data-note="' + note.id + '" data-q="' + qid + '" d="' + d + '"/><path class="conn" d="' + d + '"/>');
       });
     });
