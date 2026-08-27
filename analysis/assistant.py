@@ -286,7 +286,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--db", default=DB_DEFAULT)
     p.add_argument("--ui", default=UI_DEFAULT)
-    p.add_argument("--model", default="llama3.1:8b")
+    p.add_argument("--model", default="llama3.2:3b")
     p.add_argument("--port", type=int, default=8000)
     args = p.parse_args()
 

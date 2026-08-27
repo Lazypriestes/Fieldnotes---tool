@@ -43,7 +43,7 @@ VIRTUAL_ENV="$DIR/diarization/.venv" uv pip install -q -r diarization/requiremen
 ok "dependencies installed"
 
 # --- 3. Ollama model (for the analysis / coverage layer) -----------------
-MODEL="${FN_MODEL:-llama3.1:8b}"
+MODEL="${FN_MODEL:-llama3.2:3b}"
 if command -v ollama >/dev/null 2>&1; then
   if ollama list 2>/dev/null | grep -q "^${MODEL%%:*}"; then
     ok "Ollama model present ($MODEL)"

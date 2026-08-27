@@ -13,3 +13,6 @@ numpy>=2.0
 # OpenMP runtime, and CTranslate2 deadlocks against it at load. A lightweight Whisper
 # fallback would have to run in a separate process/venv. The retired embedding pipeline
 # (pipeline_embedding_backup.py) therefore only runs in its own sherpa-onnx venv.
+
+# Transcription: NVIDIA Parakeet on MLX (Apple GPU, no PyTorch model) — default engine
+parakeet-mlx>=0.3

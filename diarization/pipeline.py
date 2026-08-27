@@ -23,6 +23,11 @@ import sys
 import threading
 import time
 
+# Force HuggingFace's classic (resumable) downloader. Its newer Xet transfer path
+# throws "CAS Client Error: error decoding response body" on flaky/slow networks and
+# leaves models half-downloaded. Set before any hub import.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+
 import numpy as np
 import soundfile as sf
 import sounddevice as sd
@@ -154,6 +159,87 @@ class WhisperTranscriber(_Transcriber):
                 end = start
             # normalise to one leading space, matching the Crisper path's convention
             out.append((start, end, " " + ch["text"].strip()))
+        return out
+
+
+class ParakeetTranscriber(_Transcriber):
+    """NVIDIA Parakeet on the Apple GPU via MLX (parakeet-mlx) — no PyTorch at runtime.
+
+    Lighter than the Whisper/torch engines (nothing loads a multi-GB torch model into
+    unified memory) and cleaner on live/room audio. MIT-friendly. Word timestamps come
+    from the model's token alignment, reassembled from SentencePiece subwords.
+    """
+
+    def __init__(self, *, model, timeout):
+        super().__init__(timeout=timeout)
+        # MLX streams are thread-bound, but the base class runs _transcribe in a fresh
+        # thread per call. So we own the model in ONE dedicated thread and funnel every
+        # request to it — load and inference then always happen on the same thread.
+        self._model_name = model
+        self._q = queue.Queue()
+        self._ready = threading.Event()
+        self._load_err = None
+        threading.Thread(target=self._serve, daemon=True).start()
+        self._ready.wait()
+        if self._load_err:
+            raise self._load_err
+
+    def _serve(self):
+        try:
+            import mlx.core as mx
+            from parakeet_mlx import from_pretrained
+            from parakeet_mlx.audio import get_logmel
+            self._mx = mx
+            self._logmel = get_logmel
+            self.model = from_pretrained(self._model_name)
+            self._infer(np.zeros(SAMPLE_RATE, dtype=np.float32))   # warm up on this thread
+        except Exception as e:  # noqa: BLE001
+            self._load_err = e
+        finally:
+            self._ready.set()
+        while True:
+            samples, holder, done = self._q.get()
+            try:
+                holder["w"] = self._infer(samples)
+            except Exception as e:  # noqa: BLE001
+                holder["e"] = e
+            done.set()
+
+    def _infer(self, samples):
+        # raw 16 kHz samples -> log-mel -> generate; skips the model's FFmpeg file loader
+        if samples is None or len(samples) < SAMPLE_RATE // 20:     # <50 ms -> nothing
+            return []
+        audio = self._mx.array(np.asarray(samples, dtype=np.float32))
+        mel = self._logmel(audio, self.model.preprocessor_config)
+        result = self.model.generate(mel)[0]
+        return self._words(result)
+
+    def _transcribe(self, samples):
+        holder, done = {}, threading.Event()
+        self._q.put((samples, holder, done))
+        done.wait()
+        if "e" in holder:
+            raise holder["e"]
+        return holder["w"]
+
+    @staticmethod
+    def _words(result):
+        """Reassemble subword tokens into words with times. A leading space (or ▁)
+        on a token marks a new word; other tokens (incl. punctuation) continue it."""
+        out, cur = [], None
+        for sent in (getattr(result, "sentences", None) or []):
+            for tok in (getattr(sent, "tokens", None) or []):
+                txt = getattr(tok, "text", "") or ""
+                s = float(getattr(tok, "start", 0.0) or 0.0)
+                e = float(getattr(tok, "end", s) or s)
+                if txt[:1] in (" ", "▁") or cur is None:  # new word
+                    if cur:
+                        out.append((cur[0], cur[1], " " + cur[2].strip()))
+                    cur = [s, e, txt.replace("▁", " ")]
+                else:
+                    cur[1] = e; cur[2] += txt
+        if cur:
+            out.append((cur[0], cur[1], " " + cur[2].strip()))
         return out
 
 
@@ -387,9 +473,12 @@ def main():
     p.add_argument("--db", default=os.path.join(HERE, "transcript.db"))
     p.add_argument("--reset", action="store_true",
                    help="delete the transcript database before starting")
-    p.add_argument("--engine", choices=["crisper", "whisper"], default="crisper",
-                   help="crisper = CrisperWhisper verbatim fine-tune (default); "
-                        "whisper = stock OpenAI Whisper (MIT, no verbatim, ignores --mode)")
+    p.add_argument("--engine", choices=["parakeet", "crisper", "whisper"], default="parakeet",
+                   help="parakeet = NVIDIA Parakeet on MLX (default; light on RAM, no torch model); "
+                        "crisper = CrisperWhisper verbatim fine-tune; "
+                        "whisper = stock OpenAI Whisper (MIT, ignores --mode)")
+    p.add_argument("--parakeet-model", default="mlx-community/parakeet-tdt-0.6b-v2",
+                   help="parakeet-mlx checkpoint for --engine parakeet")
     p.add_argument("--mode", choices=["verbatim", "intended"], default="verbatim",
                    help="CrisperWhisper only: verbatim keeps fillers/false starts; "
                         "intended cleans them up")
@@ -428,7 +517,11 @@ def main():
                 pass
         print(f"[reset] deleted {removed} file(s) for {os.path.basename(args.db)}")
 
-    if args.engine == "whisper":
+    if args.engine == "parakeet":
+        print(f"[init] loading Parakeet {args.parakeet_model} (Apple GPU / MLX) "
+              f"— first run downloads the model, then warms up...")
+        transcriber = ParakeetTranscriber(model=args.parakeet_model, timeout=args.asr_timeout)
+    elif args.engine == "whisper":
         print(f"[init] loading Whisper {args.whisper_model} (Apple GPU) "
               f"— first run downloads the model, then warms up...")
         transcriber = WhisperTranscriber(language=args.language,
