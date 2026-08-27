@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live captions</title>
+<style>
+  :root {
+    --bg:      #0a0a0c;
+    --panel:   #131318;
+    --dim:     #6b6b7b;
+    --hairline:#232330;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: #e8e8f0;
+    font-family: -apple-system, system-ui, sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---- status bar ---------------------------------------------------- */
+  header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 22px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--hairline);
+    font-size: 12px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--dim);
+    flex-wrap: wrap;
+  }
+
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #ef4444; flex: 0 0 auto;
+  }
+  .dot.live { background: #22c55e; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:.35 } }
+
+  #legend { display: flex; gap: 16px; margin-left: auto; flex-wrap: wrap; }
+  #legend span { display: flex; align-items: center; gap: 6px; }
+  #legend i {
+    width: 10px; height: 10px; border-radius: 2px;
+    display: inline-block; font-style: normal;
+  }
+
+  /* ---- caption stream ------------------------------------------------ */
+  #stream {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 32px 42px 45vh;
+    scroll-behavior: smooth;
+  }
+
+  .line {
+    margin: 0 0 30px;
+    animation: rise .28s ease-out;
+    opacity: .55;
+    transition: opacity .4s ease;
+  }
+  .line.recent { opacity: 1; }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: .55; transform: none; }
+  }
+
+  .meta {
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    letter-spacing: .06em;
+    color: var(--dim);
+    margin-bottom: 7px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .who { font-weight: 700; text-transform: uppercase; }
+
+  .text {
+    font-size: clamp(22px, 2.7vw, 35px);
+    line-height: 1.32;
+    max-width: 22em;
+  }
+
+  /* ---- one colour AND one typeface per speaker ----------------------- */
+  .sp0 .text { color:#38bdf8; font-family:-apple-system,"SF Pro Display",system-ui,sans-serif; font-weight:700; }
+  .sp0 .who  { color:#38bdf8; }
+  .sp1 .text { color:#fbbf24; font-family:Georgia,"Iowan Old Style",serif; font-weight:700; font-style:italic; }
+  .sp1 .who  { color:#fbbf24; }
+  .sp2 .text { color:#34d399; font-family:"SF Mono",Menlo,monospace; font-weight:600; letter-spacing:-.02em; }
+  .sp2 .who  { color:#34d399; }
+  .sp3 .text { color:#f472b6; font-family:"Avenir Next",Optima,sans-serif; font-weight:600; letter-spacing:.03em; }
+  .sp3 .who  { color:#f472b6; }
+  .sp4 .text { color:#a78bfa; font-family:Baskerville,Palatino,serif; font-weight:700; }
+  .sp4 .who  { color:#a78bfa; }
+  .sp5 .text { color:#fb923c; font-family:"Gill Sans","Trebuchet MS",sans-serif; font-weight:700; }
+  .sp5 .who  { color:#fb923c; }
+
+  #empty {
+    color: var(--dim);
+    font-size: 15px;
+    padding: 60px 42px;
+    line-height: 1.7;
+  }
+  code {
+    font-family: "SF Mono", Menlo, monospace;
+    background: var(--panel);
+    padding: 2px 7px;
+    border-radius: 4px;
+    color: #9aa;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="dot" id="dot"></span>
+  <span id="status">connecting</span>
+  <span id="count"></span>
+  <div id="legend"></div>
+</header>
+
+<div id="stream">
+  <div id="empty">
+    Waiting for the pipeline to write its first segment&hellip;<br><br>
+    Start it with <code>python pipeline.py --source device --device "BlackHole 2ch"</code>
+  </div>
+</div>
+
+<script>
+const COLORS = ["#38bdf8", "#fbbf24", "#34d399", "#f472b6", "#a78bfa", "#fb923c"];
+
+const stream  = document.getElementById("stream");
+const legend  = document.getElementById("legend");
+const statusEl= document.getElementById("status");
+const countEl = document.getElementById("count");
+const dot     = document.getElementById("dot");
+const empty   = document.getElementById("empty");
+
+let lastId    = 0;
+let session   = null;
+let speakers  = new Map();   // name -> style index, in order of first appearance
+let total     = 0;
+
+// Stick to the bottom, unless the user has deliberately scrolled up to re-read.
+function atBottom() {
+  return stream.scrollHeight - stream.scrollTop - stream.clientHeight < 140;
+}
+
+function styleFor(name) {
+  if (!speakers.has(name)) {
+    speakers.set(name, speakers.size % COLORS.length);
+    const s = document.createElement("span");
+    s.innerHTML = `<i style="background:${COLORS[speakers.get(name)]}"></i>${name}`;
+    legend.appendChild(s);
+  }
+  return speakers.get(name);
+}
+
+function clock(t) {
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function reset() {
+  stream.innerHTML = "";
+  legend.innerHTML = "";
+  speakers = new Map();
+  lastId = 0;
+  total = 0;
+}
+
+function add(seg) {
+  const stick = atBottom();
+
+  document.querySelectorAll(".line.recent").forEach(el => el.classList.remove("recent"));
+
+  const line = document.createElement("div");
+  line.className = `line recent sp${styleFor(seg.speaker)}`;
+  line.innerHTML =
+    `<div class="meta"><span class="who"></span><span class="ts"></span></div>
+     <div class="text"></div>`;
+  line.querySelector(".who").textContent  = seg.speaker;
+  line.querySelector(".ts").textContent   = clock(seg.t_start);
+  line.querySelector(".text").textContent = seg.text;   // textContent: never inject markup
+  stream.appendChild(line);
+
+  if (stick) stream.scrollTop = stream.scrollHeight;
+}
+
+async function poll() {
+  try {
+    const r = await fetch(`/api/segments?after=${lastId}`);
+    const d = await r.json();
+
+    if (d.waiting) {
+      dot.classList.remove("live");
+      statusEl.textContent = "waiting for pipeline";
+      return;
+    }
+
+    if (session && d.session !== session) reset();   // new run -> start clean
+    session = d.session;
+
+    if (d.segments.length) {
+      if (empty.parentNode) empty.remove();
+      d.segments.forEach(s => { add(s); lastId = s.id; });
+      total += d.segments.length;
+      countEl.textContent = `${total} segments · ${speakers.size} speakers`;
+    }
+
+    dot.classList.add("live");
+    statusEl.textContent = `session ${session.slice(0, 8)}`;
+  } catch (e) {
+    dot.classList.remove("live");
+    statusEl.textContent = "server offline";
+  }
+}
+
+poll();
+setInterval(poll, 400);
+</script>
+</body>
+</html>

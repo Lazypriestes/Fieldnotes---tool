@@ -1,0 +1,18 @@
+# Python venv & caches (venv is ~1GB and machine-specific — rebuild with uv)
+diarization/.venv/
+**/__pycache__/
+*.pyc
+
+# Downloaded model weights (pulled to ~/.cache/huggingface on first run)
+diarization/models/
+
+# Generated transcripts / runtime data
+diarization/transcript.db
+diarization/transcript.db-wal
+diarization/transcript.db-shm
+
+# macOS
+.DS_Store
+
+# Editor / old backups
+canvas/_backups/

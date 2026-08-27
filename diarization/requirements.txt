@@ -1,0 +1,15 @@
+# Diarization: NVIDIA Sortformer via MLX (Apple Silicon GPU, no CUDA)
+mlx-audio>=0.3
+# Transcription: CrisperWhisper (verbatim fine-tune) on the Apple GPU via PyTorch/MPS
+crisperwhisper[transformers]>=2.0
+ctranslate2                       # not used for inference, but crisperwhisper imports it
+# Audio I/O
+sounddevice>=0.5
+soundfile>=0.13
+numpy>=2.0
+
+# NOTE: a CTranslate2-based Whisper (faster-whisper) cannot run in this environment.
+# PyTorch (pulled in by crisperwhisper and, transitively, mlx-audio) ships its own
+# OpenMP runtime, and CTranslate2 deadlocks against it at load. A lightweight Whisper
+# fallback would have to run in a separate process/venv. The retired embedding pipeline
+# (pipeline_embedding_backup.py) therefore only runs in its own sherpa-onnx venv.
