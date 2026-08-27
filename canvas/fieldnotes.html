@@ -720,7 +720,7 @@
 
   /* ---------- history ---------- */
   var undoStack = [], redoStack = [];
-  function ser(n) { return { i: n.id, k: n.kind, t: n.text, m: n.mins, c: n.collapsed, cu: n.cues, ch: n.children.map(ser) }; }
+  function ser(n) { return { i: n.id, k: n.kind, t: n.text, m: n.mins, c: n.collapsed, cu: n.cues, ak: n.asks, ch: n.children.map(ser) }; }
   function snap() { return JSON.stringify(ROOT.children.map(ser)); }
   function pushHistory(before) {
     undoStack.push(before === undefined ? snap() : before);
@@ -731,10 +731,12 @@
   function rebuild(d, parent) {
     var n = attach(parent, mk({ id: d.i, kind: d.k, depth: parent.depth + 1, text: d.t, mins: d.m, collapsed: d.c }));
     if (d.cu) n.cues = d.cu;
+    if (d.ak) n.asks = d.ak;
     d.ch.forEach(function (c) { rebuild(c, n); });
     return n;
   }
   function nodeCues(n) { if (!n.cues) n.cues = cues(n); return n.cues; }   // materialize the heuristic once, then it's editable
+  function nodeAsks(n) { if (!n.asks) n.asks = [n.text.split(/[,:?]/)[0].toLowerCase().trim()].filter(Boolean); return n.asks; }
   function restore(json) {
     var data = JSON.parse(json);
     NODES.forEach(function (n) {
@@ -1458,8 +1460,10 @@
     var isF = n.depth === 2;
     html += '<div class="kicker">' + (n.kind === 'opener' ? 'TOPIC ' + n.topic + ' OPENER' : isF ? 'FOLLOW-UP TO ' + n.parent.label : n.label) + '</div>';
     html += '<div class="fld"><label>Question</label><div class="qbox" contenteditable="EDITABLE" data-edit="' + n.id + '">' + esc(n.text) + '</div></div>';
-    html += '<div class="fld"><label>Counts as asking</label><div class="tags"><span class="tag">' +
-      esc(n.text.split(/[,:?]/)[0].toLowerCase().slice(0, 34)) + '…</span><span class="tag add">+</span></div></div>';
+    html += '<div class="fld"><label>Counts as asking <button class="ai-btn" data-aiasks="' + n.id + '">✦ auto</button></label>' +
+      '<div class="tags">' +
+      nodeAsks(n).map(function (c) { return '<span class="tag">' + esc(c) + '<button class="tagx" data-rmask="' + esc(c) + '">×</button></span>'; }).join('') +
+      '<span class="tag add" id="addAsk">+</span></div></div>';
     html += '<div class="fld"><label>Counts as answered <button class="ai-btn" data-aicues="' + n.id + '">✦ auto</button></label>' +
       '<div class="tags">' +
       nodeCues(n).map(function (c) { return '<span class="tag">' + esc(c) + '<button class="tagx" data-rmcue="' + esc(c) + '">×</button></span>'; }).join('') +
@@ -1504,24 +1508,30 @@
       });
       d.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); d.blur(); } e.stopPropagation(); });
     });
-    // ---- "counts as answered" cues: remove, manual add, AI auto-generate ----
-    insp.querySelectorAll('[data-rmcue]').forEach(function (b) {
+    // ---- editable cue fields (remove / manual add / AI auto) ----
+    wireCueField(nodeAsks, 'asking', 'data-rmask', 'addAsk', 'data-aiasks');
+    wireCueField(nodeCues, 'answered', 'data-rmcue', 'addCue', 'data-aicues');
+  }
+
+  function wireCueField(getArr, aiKind, rmAttr, addId, aiAttr) {
+    insp.querySelectorAll('[' + rmAttr + ']').forEach(function (b) {
       b.addEventListener('click', function () {
         var n = INDEX[selected]; if (!n) return;
-        n.cues = nodeCues(n).filter(function (c) { return c !== b.dataset.rmcue; });
+        var a = getArr(n), i = a.indexOf(b.getAttribute(rmAttr));
+        if (i > -1) a.splice(i, 1);
         scheduleFileSave(); drawInspector();
       });
     });
-    var addCue = $('addCue');
-    if (addCue) addCue.addEventListener('click', function () {
+    var add = $(addId);
+    if (add) add.addEventListener('click', function () {
       var inp = document.createElement('input');
-      inp.className = 'tag-input'; inp.placeholder = 'add cue…';
-      addCue.replaceWith(inp); inp.focus();
+      inp.className = 'tag-input'; inp.placeholder = 'add…';
+      add.replaceWith(inp); inp.focus();
       var done = false;
       function commit(save) {
         if (done) return; done = true;
         var n = INDEX[selected], v = inp.value.trim().toLowerCase();
-        if (save && v && n) { var c = nodeCues(n); if (c.indexOf(v) < 0) c.push(v); scheduleFileSave(); }
+        if (save && v && n) { var a = getArr(n); if (a.indexOf(v) < 0) a.push(v); scheduleFileSave(); }
         drawInspector();
       }
       inp.addEventListener('keydown', function (e) {
@@ -1531,19 +1541,19 @@
       });
       inp.addEventListener('blur', function () { commit(true); });
     });
-    var aic = insp.querySelector('[data-aicues]');
-    if (aic) aic.addEventListener('click', function () {
+    var ai = insp.querySelector('[' + aiAttr + ']');
+    if (ai) ai.addEventListener('click', function () {
       var n = INDEX[selected]; if (!n) return;
-      aic.classList.add('busy'); aic.textContent = '…thinking';
+      ai.classList.add('busy'); ai.textContent = '…thinking';
       fetch(API + '/api/cues', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: n.text }) })
+        body: JSON.stringify({ question: n.text, kind: aiKind }) })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          var c = nodeCues(n);
-          (d.cues || []).forEach(function (x) { if (c.indexOf(x) < 0) c.push(x); });
+          var a = getArr(n);
+          (d.cues || []).forEach(function (x) { if (a.indexOf(x) < 0) a.push(x); });
           scheduleFileSave(); drawInspector();
         })
-        .catch(function () { aic.textContent = 'no server'; setTimeout(function () { if (aic.isConnected) { aic.classList.remove('busy'); aic.textContent = '✦ auto'; } }, 1500); });
+        .catch(function () { ai.textContent = 'no server'; setTimeout(function () { if (ai.isConnected) { ai.classList.remove('busy'); ai.textContent = '✦ auto'; } }, 1500); });
     });
   }
 
@@ -1938,8 +1948,9 @@
     NODES.forEach(function (n) {
       if (n.depth >= 1 && n.kind !== 'topic') {
         var cs = (n.cues && n.cues.length) ? '  [answered when they mention: ' + n.cues.join(', ') + ']' : '';
+        var ks = (n.asks && n.asks.length) ? '  [asked when interviewer says: ' + n.asks.join(', ') + ']' : '';
         qs.push({ id: n.id, topic: n.topic || 1,
-                  label: (n.label === '↳' ? 'follow' : n.label) || '', text: n.text + cs });
+                  label: (n.label === '↳' ? 'follow' : n.label) || '', text: n.text + cs + ks });
       }
     });
     return { interviewer: LIVE.interviewer, questions: qs };

@@ -130,12 +130,18 @@ def ollama_matches(model, plan_text, speaker, text):
     return clean
 
 
-def ollama_cues(model, question):
-    """Ask the local model for short 'counts as answered' cue phrases for a question."""
-    prompt = ("For an interview question, list 4-6 SHORT cue phrases or keywords that, if the "
-              "interviewee says them, signal they've answered it. Prefer concrete nouns/verbs "
-              "over generic words. Return ONLY JSON: {\"cues\":[\"...\"]}. Each 1-3 words, "
-              "lowercase, no duplicates.\n\nQUESTION: " + question)
+def ollama_cues(model, question, kind="answered"):
+    """Short cue phrases for a question. kind='answered' = signals the answer was given;
+    kind='asking' = paraphrases the interviewer might use to ASK it."""
+    if kind == "asking":
+        prompt = ("For an interview question, list 4-6 SHORT phrases the INTERVIEWER might say "
+                  "when asking it (paraphrases or lead-ins). Return ONLY JSON: {\"cues\":[\"...\"]}. "
+                  "Each 1-4 words, lowercase, no duplicates.\n\nQUESTION: " + question)
+    else:
+        prompt = ("For an interview question, list 4-6 SHORT cue phrases or keywords that, if the "
+                  "interviewee says them, signal they've answered it. Prefer concrete nouns/verbs "
+                  "over generic words. Return ONLY JSON: {\"cues\":[\"...\"]}. Each 1-3 words, "
+                  "lowercase, no duplicates.\n\nQUESTION: " + question)
     body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}],
                        "stream": False, "format": "json", "options": {"temperature": 0.3}}).encode()
     req = urllib.request.Request(OLLAMA_URL, data=body, headers={"Content-Type": "application/json"})
@@ -264,7 +270,7 @@ class Handler(BaseHTTPRequestHandler):
             if not q:
                 return self._json({"ok": False, "cues": []})
             try:
-                return self._json({"ok": True, "cues": ollama_cues(self.model, q)})
+                return self._json({"ok": True, "cues": ollama_cues(self.model, q, data.get("kind", "answered"))})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e), "cues": []})
         self._send(404, b"not found", "text/plain")
