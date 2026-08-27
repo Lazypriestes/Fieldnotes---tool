@@ -19,7 +19,6 @@ import argparse
 import atexit
 import json
 import os
-import signal
 import sqlite3
 import subprocess
 import sys
@@ -40,10 +39,11 @@ OLLAMA_URL = "http://localhost:11434/api/chat"
 
 # ---- diarization pipeline as a managed subprocess -----------------------
 PIPE = None                                              # Popen handle, or None
+PIPE_LOG = None                                          # its open log file handle
 PIPE_INFO = {"running": False, "source": None}
 
 def stop_pipeline():
-    global PIPE
+    global PIPE, PIPE_LOG
     if PIPE and PIPE.poll() is None:
         try:
             PIPE.terminate()
@@ -52,11 +52,15 @@ def stop_pipeline():
         except Exception:
             pass
     PIPE = None
+    if PIPE_LOG:
+        try: PIPE_LOG.close()
+        except Exception: pass
+        PIPE_LOG = None
     PIPE_INFO.update(running=False, source=None)
 
 def start_pipeline(source, device, names):
     """Spawn diarization/pipeline.py. source: 'sample' | 'device'."""
-    global PIPE
+    global PIPE, PIPE_LOG
     stop_pipeline()
     names = names or "Interviewer,Candidate"
     args = [sys.executable, PIPELINE, "--reset", "--names", names]
@@ -64,8 +68,8 @@ def start_pipeline(source, device, names):
         args += ["--source", "file", "--path", SAMPLE]      # realtime pacing (no --fast) = feels live
     else:
         args += ["--source", "device", "--device", device or "MacBook Pro Microphone"]
-    log = open(os.path.join(DIAR, "pipeline.log"), "w")
-    PIPE = subprocess.Popen(args, cwd=DIAR, stdout=log, stderr=subprocess.STDOUT)
+    PIPE_LOG = open(os.path.join(DIAR, "pipeline.log"), "w")
+    PIPE = subprocess.Popen(args, cwd=DIAR, stdout=PIPE_LOG, stderr=subprocess.STDOUT)
     PIPE_INFO.update(running=True, source=source)
     return PIPE_INFO.copy()
 
