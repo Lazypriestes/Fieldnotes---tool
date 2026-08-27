@@ -16,9 +16,13 @@ leaves the machine, matching the pipeline's local-only guarantee.
 """
 
 import argparse
+import atexit
 import json
 import os
+import signal
 import sqlite3
+import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -27,9 +31,45 @@ from urllib.parse import urlparse, parse_qs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)                              # intermeow/
-DB_DEFAULT = os.path.join(ROOT, "diarization", "transcript.db")
+DIAR = os.path.join(ROOT, "diarization")
+DB_DEFAULT = os.path.join(DIAR, "transcript.db")
 UI_DEFAULT = os.path.join(ROOT, "canvas", "fieldnotes.html")
+PIPELINE = os.path.join(DIAR, "pipeline.py")
+SAMPLE = os.path.join(DIAR, "sample_interview.wav")
 OLLAMA_URL = "http://localhost:11434/api/chat"
+
+# ---- diarization pipeline as a managed subprocess -----------------------
+PIPE = None                                              # Popen handle, or None
+PIPE_INFO = {"running": False, "source": None}
+
+def stop_pipeline():
+    global PIPE
+    if PIPE and PIPE.poll() is None:
+        try:
+            PIPE.terminate()
+            try: PIPE.wait(timeout=5)
+            except subprocess.TimeoutExpired: PIPE.kill()
+        except Exception:
+            pass
+    PIPE = None
+    PIPE_INFO.update(running=False, source=None)
+
+def start_pipeline(source, device, names):
+    """Spawn diarization/pipeline.py. source: 'sample' | 'device'."""
+    global PIPE
+    stop_pipeline()
+    names = names or "Interviewer,Candidate"
+    args = [sys.executable, PIPELINE, "--reset", "--names", names]
+    if source == "sample":
+        args += ["--source", "file", "--path", SAMPLE]      # realtime pacing (no --fast) = feels live
+    else:
+        args += ["--source", "device", "--device", device or "MacBook Pro Microphone"]
+    log = open(os.path.join(DIAR, "pipeline.log"), "w")
+    PIPE = subprocess.Popen(args, cwd=DIAR, stdout=log, stderr=subprocess.STDOUT)
+    PIPE_INFO.update(running=True, source=source)
+    return PIPE_INFO.copy()
+
+atexit.register(stop_pipeline)
 
 # ---- shared state (guarded by LOCK) -------------------------------------
 LOCK = threading.Lock()
@@ -182,6 +222,17 @@ class Handler(BaseHTTPRequestHandler):
                 STATE["last_seg"] = 0
                 COVERAGE.clear()
             return self._json({"ok": True, "questions": len(qs)})
+        if url.path == "/api/start":
+            n = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(n) or b"{}")
+            try:
+                info = start_pipeline(data.get("source", "sample"), data.get("device"), data.get("names"))
+                return self._json({"ok": True, **info})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+        if url.path == "/api/stop":
+            stop_pipeline()
+            return self._json({"ok": True, "running": False})
         self._send(404, b"not found", "text/plain")
 
     def do_GET(self):
@@ -218,6 +269,12 @@ class Handler(BaseHTTPRequestHandler):
                 events = [e for e in COVERAGE if e["id"] > after]
                 has_plan = bool(PLAN["by_id"])
             return self._json({"has_plan": has_plan, "events": events})
+
+        if url.path == "/api/status":
+            running = bool(PIPE and PIPE.poll() is None)
+            if not running and PIPE_INFO["running"]:
+                PIPE_INFO.update(running=False, source=None)
+            return self._json({"running": running, "source": PIPE_INFO["source"]})
 
         self._send(404, b"not found", "text/plain")
 

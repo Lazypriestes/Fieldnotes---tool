@@ -35,29 +35,30 @@ downloads the diarizer + Whisper models (~1.7 GB) into `~/.cache/huggingface` an
 
 ## Run
 
-**Try it on the bundled sample** (no audio setup needed):
-
 ```bash
-# 1) diarize the sample -> diarization/transcript.db
-diarization/.venv/bin/python diarization/pipeline.py --reset --fast --names "Interviewer,Candidate"
-
-# 2) serve the app
-./start.sh                       # -> http://localhost:8000
+./start.sh
 ```
 
-Open **http://localhost:8000**. The **▶ play** button runs a canned demo with no backend.
-The **◉ live** button connects to the running server and drives the canvas from the real
-transcript + LLM coverage.
+That serves the app and opens **http://localhost:8000**. Then:
 
-**A real call** — capture live audio instead of the sample (see `diarization/README.md`
-for the BlackHole / Aggregate-Device routing):
+- **▶ play** — canned demo, no backend needed.
+- **◉ go live** — pick a source in the little dropdown and click ◉. The server **starts
+  diarization for you** (no second terminal) and the canvas fills from the real transcript
+  + LLM coverage. Click ◉ again (or ▪ stop) to end it — the pipeline stops too.
+
+Sources:
+- **Sample** — streams `sample_interview.wav` at real time, like a live call. Zero setup;
+  the default, ideal for a quick demo.
+- **Microphone** — captures your mic (in-person interviews). First run asks macOS for mic
+  permission.
+- **A real call** (Zoom/Teams/video system audio) needs a loopback driver —
+  `brew install blackhole-2ch` — then set the mic option to your BlackHole/Aggregate device
+  in `analysis/assistant.py` (or run the pipeline manually, below). See `diarization/README.md`.
+
+Manual two-terminal way still works if you prefer it:
 
 ```bash
-# terminal 1 — diarize the call live
-diarization/.venv/bin/python diarization/pipeline.py \
-  --source device --device "BlackHole 2ch" --names "Interviewer,Candidate"
-
-# terminal 2 — serve the app
+diarization/.venv/bin/python diarization/pipeline.py --reset --fast --names "Interviewer,Candidate"
 ./start.sh
 ```
 

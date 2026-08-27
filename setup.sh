@@ -56,8 +56,24 @@ else
   echo "      install from https://ollama.com , then:  ollama pull $MODEL"
 fi
 
+# --- 4. warm up the models (first pipeline run downloads them; do it now) ----
+if [ "${FN_SKIP_WARMUP:-}" = "1" ]; then
+  warn "skipping model warm-up (FN_SKIP_WARMUP=1) — they download on first live run"
+else
+  say "warming up diarizer + Whisper on the sample (~1.7 GB first time — one-time)"
+  if diarization/.venv/bin/python diarization/pipeline.py --reset --fast --names "Interviewer,Candidate" >/tmp/fn_warmup.log 2>&1; then
+    ok "models cached; pipeline verified end-to-end"
+  else
+    warn "warm-up failed (see /tmp/fn_warmup.log) — models will download on first live run"
+  fi
+fi
+
 echo ""
-say "Done. Try it:"
+say "Done. Launch it:"
+echo "    ./start.sh                 # serves the app and opens the browser"
+echo "  Then click the ◉ button (Sample source) — the server starts diarization for you."
+echo ""
+say "Old manual way, still works:"
 echo "    # 1) diarize the bundled sample -> diarization/transcript.db"
 echo "    diarization/.venv/bin/python diarization/pipeline.py --reset --fast --names \"Interviewer,Candidate\""
 echo "    # 2) serve the app  (or just:  ./start.sh )"

@@ -16,4 +16,6 @@ if [ ! -x "$PY" ]; then
 fi
 
 echo "Fieldnotes -> http://localhost:$PORT   (ctrl-c to stop)"
+echo "Open the page, click ◉ to go live (the server starts diarization for you)."
+( sleep 1; command -v open >/dev/null 2>&1 && open "http://localhost:$PORT" ) &
 exec "$PY" "$DIR/analysis/assistant.py" --port "$PORT"
