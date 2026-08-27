@@ -445,7 +445,15 @@
   .qbox:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
   .tags{display:flex;flex-wrap:wrap;gap:4px}
   .tag{border:1px solid var(--hair);border-radius:3px;padding:2px 6px;font-size:11px;color:#4C545A;background:#FBFBFC}
-  .tag.add{border-style:dashed;color:var(--faint)}
+  .tag.add{border-style:dashed;color:var(--faint);cursor:pointer}
+  .tag{display:inline-flex;align-items:center;gap:3px}
+  .tag .tagx{color:var(--faint);font-size:12px;line-height:1;padding:0 1px;margin-left:1px}
+  .tag .tagx:hover{color:var(--red)}
+  .tag-input{border:1px solid var(--accent);border-radius:3px;padding:1px 5px;font-size:11px;outline:none;width:78px;color:var(--ink);background:var(--surface)}
+  .ai-btn{float:right;font-family:ui-monospace,Menlo,monospace;font-size:8.5px;letter-spacing:.04em;
+    color:var(--accent);background:var(--accent-soft);border:1px solid #CBDBFB;border-radius:4px;padding:1px 6px}
+  .ai-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .ai-btn.busy{opacity:.6}
   .sens{display:flex;align-items:center;gap:9px}
   .sens input{flex:1;accent-color:var(--accent)}
   .sens .v{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--muted);width:28px}
@@ -712,7 +720,7 @@
 
   /* ---------- history ---------- */
   var undoStack = [], redoStack = [];
-  function ser(n) { return { i: n.id, k: n.kind, t: n.text, m: n.mins, c: n.collapsed, ch: n.children.map(ser) }; }
+  function ser(n) { return { i: n.id, k: n.kind, t: n.text, m: n.mins, c: n.collapsed, cu: n.cues, ch: n.children.map(ser) }; }
   function snap() { return JSON.stringify(ROOT.children.map(ser)); }
   function pushHistory(before) {
     undoStack.push(before === undefined ? snap() : before);
@@ -722,9 +730,11 @@
   }
   function rebuild(d, parent) {
     var n = attach(parent, mk({ id: d.i, kind: d.k, depth: parent.depth + 1, text: d.t, mins: d.m, collapsed: d.c }));
+    if (d.cu) n.cues = d.cu;
     d.ch.forEach(function (c) { rebuild(c, n); });
     return n;
   }
+  function nodeCues(n) { if (!n.cues) n.cues = cues(n); return n.cues; }   // materialize the heuristic once, then it's editable
   function restore(json) {
     var data = JSON.parse(json);
     NODES.forEach(function (n) {
@@ -1450,8 +1460,10 @@
     html += '<div class="fld"><label>Question</label><div class="qbox" contenteditable="EDITABLE" data-edit="' + n.id + '">' + esc(n.text) + '</div></div>';
     html += '<div class="fld"><label>Counts as asking</label><div class="tags"><span class="tag">' +
       esc(n.text.split(/[,:?]/)[0].toLowerCase().slice(0, 34)) + '…</span><span class="tag add">+</span></div></div>';
-    html += '<div class="fld"><label>Counts as answered</label><div class="tags">' +
-      cues(n).map(function (c) { return '<span class="tag">' + c + '</span>'; }).join('') + '<span class="tag add">+</span></div></div>';
+    html += '<div class="fld"><label>Counts as answered <button class="ai-btn" data-aicues="' + n.id + '">✦ auto</button></label>' +
+      '<div class="tags">' +
+      nodeCues(n).map(function (c) { return '<span class="tag">' + esc(c) + '<button class="tagx" data-rmcue="' + esc(c) + '">×</button></span>'; }).join('') +
+      '<span class="tag add" id="addCue">+</span></div></div>';
     var sv = n.kind === 'opener' ? 48 : /probe/.test(n.kind) ? 70 : 62;
     html += '<div class="fld"><label>Sensitivity</label><div class="sens">' +
       '<input type="range" min="30" max="90" value="' + sv + '" id="sens"><span class="v" id="sensv">0.' + sv + '</span></div></div>';
@@ -1491,6 +1503,47 @@
         renumber(); layout(); buildSpine();
       });
       d.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); d.blur(); } e.stopPropagation(); });
+    });
+    // ---- "counts as answered" cues: remove, manual add, AI auto-generate ----
+    insp.querySelectorAll('[data-rmcue]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var n = INDEX[selected]; if (!n) return;
+        n.cues = nodeCues(n).filter(function (c) { return c !== b.dataset.rmcue; });
+        scheduleFileSave(); drawInspector();
+      });
+    });
+    var addCue = $('addCue');
+    if (addCue) addCue.addEventListener('click', function () {
+      var inp = document.createElement('input');
+      inp.className = 'tag-input'; inp.placeholder = 'add cue…';
+      addCue.replaceWith(inp); inp.focus();
+      var done = false;
+      function commit(save) {
+        if (done) return; done = true;
+        var n = INDEX[selected], v = inp.value.trim().toLowerCase();
+        if (save && v && n) { var c = nodeCues(n); if (c.indexOf(v) < 0) c.push(v); scheduleFileSave(); }
+        drawInspector();
+      }
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); commit(true); }
+        else if (e.key === 'Escape') { commit(false); }
+        e.stopPropagation();
+      });
+      inp.addEventListener('blur', function () { commit(true); });
+    });
+    var aic = insp.querySelector('[data-aicues]');
+    if (aic) aic.addEventListener('click', function () {
+      var n = INDEX[selected]; if (!n) return;
+      aic.classList.add('busy'); aic.textContent = '…thinking';
+      fetch(API + '/api/cues', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: n.text }) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var c = nodeCues(n);
+          (d.cues || []).forEach(function (x) { if (c.indexOf(x) < 0) c.push(x); });
+          scheduleFileSave(); drawInspector();
+        })
+        .catch(function () { aic.textContent = 'no server'; setTimeout(function () { if (aic.isConnected) { aic.classList.remove('busy'); aic.textContent = '✦ auto'; } }, 1500); });
     });
   }
 
@@ -1884,8 +1937,9 @@
     var qs = [];
     NODES.forEach(function (n) {
       if (n.depth >= 1 && n.kind !== 'topic') {
+        var cs = (n.cues && n.cues.length) ? '  [answered when they mention: ' + n.cues.join(', ') + ']' : '';
         qs.push({ id: n.id, topic: n.topic || 1,
-                  label: (n.label === '↳' ? 'follow' : n.label) || '', text: n.text });
+                  label: (n.label === '↳' ? 'follow' : n.label) || '', text: n.text + cs });
       }
     });
     return { interviewer: LIVE.interviewer, questions: qs };

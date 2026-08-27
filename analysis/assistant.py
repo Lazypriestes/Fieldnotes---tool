@@ -130,6 +130,29 @@ def ollama_matches(model, plan_text, speaker, text):
     return clean
 
 
+def ollama_cues(model, question):
+    """Ask the local model for short 'counts as answered' cue phrases for a question."""
+    prompt = ("For an interview question, list 4-6 SHORT cue phrases or keywords that, if the "
+              "interviewee says them, signal they've answered it. Prefer concrete nouns/verbs "
+              "over generic words. Return ONLY JSON: {\"cues\":[\"...\"]}. Each 1-3 words, "
+              "lowercase, no duplicates.\n\nQUESTION: " + question)
+    body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}],
+                       "stream": False, "format": "json", "options": {"temperature": 0.3}}).encode()
+    req = urllib.request.Request(OLLAMA_URL, data=body, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        out = json.load(r)
+    try:
+        raw = json.loads(out["message"]["content"]).get("cues", [])
+    except Exception:
+        return []
+    seen, cues = set(), []
+    for c in raw:
+        c = str(c).strip().lower()
+        if c and c not in seen:
+            seen.add(c); cues.append(c)
+    return cues[:8]
+
+
 def read_only(db):
     return sqlite3.connect(f"file:{db}?mode=ro", uri=True)
 
@@ -186,6 +209,7 @@ def worker(db, model):
 
 class Handler(BaseHTTPRequestHandler):
     db_path = "transcript.db"
+    model = "llama3.2:3b"
     ui_path = ""
 
     def _send(self, code, body, ctype):
@@ -233,6 +257,16 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/stop":
             stop_pipeline()
             return self._json({"ok": True, "running": False})
+        if url.path == "/api/cues":
+            n = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(n) or b"{}")
+            q = (data.get("question") or "").strip()
+            if not q:
+                return self._json({"ok": False, "cues": []})
+            try:
+                return self._json({"ok": True, "cues": ollama_cues(self.model, q)})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e), "cues": []})
         self._send(404, b"not found", "text/plain")
 
     def do_GET(self):
@@ -292,6 +326,7 @@ def main():
 
     Handler.db_path = args.db
     Handler.ui_path = args.ui
+    Handler.model = args.model
     threading.Thread(target=worker, args=(args.db, args.model), daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     print(f"assistant:   http://localhost:{args.port}")
