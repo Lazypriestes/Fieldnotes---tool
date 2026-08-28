@@ -2619,7 +2619,7 @@
 
   /* ---------- boot ---------- */
   /* ================= files: multiple trees / blank pages (tldraw-style) ================= */
-  var FILES = [], ACTIVE = null, filesTimer = null;
+  var FILES = [], ACTIVE = null, filesTimer = null, BUILTIN = null;
   function persistFiles() {
     try { localStorage.setItem('fnt_files', JSON.stringify(FILES)); localStorage.setItem('fnt_active', ACTIVE); } catch (e) {}
   }
@@ -2692,11 +2692,20 @@
         '<button class="fx" data-del="' + f.id + '" title="Delete">×</button></div>';
     });
     html += '<div class="filenew" id="fileNew"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.5v9M3.5 8h9"/></svg>New blank tree</div>';
+    html += '<div class="filenew" id="fileTpl"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3.5h6l3 3v6H3z"/><path d="M9 3.5v3h3"/></svg>Industrial-design CAD (template)</div>';
     list.innerHTML = html;
   }
   function openFileList() { renderFileList(); $('fileList').hidden = false; $('filemenu').classList.add('open'); }
   function closeFileList() { $('fileList').hidden = true; $('filemenu').classList.remove('open'); }
+  function newFromTemplate() {
+    if (!BUILTIN) return;
+    saveActive();
+    var id = newId();
+    FILES.push({ id: id, name: 'industrial-design-cad-ai', data: BUILTIN, notes: [] });
+    loadFile(id); renderFileList();
+  }
   function initFiles() {
+    BUILTIN = snap();      // the built-in CAD tree, captured before any saved file replaces it
     var saved = null, savedActive = null;
     try { saved = JSON.parse(localStorage.getItem('fnt_files') || 'null'); savedActive = localStorage.getItem('fnt_active'); } catch (e) {}
     if (saved && saved.length) {
@@ -2718,6 +2727,7 @@
       var del = e.target.closest('[data-del]');
       if (del) { e.stopPropagation(); deleteFile(del.dataset.del); return; }
       if (e.target.closest('#fileNew')) { newBlank(); return; }
+      if (e.target.closest('#fileTpl')) { newFromTemplate(); return; }
       var fn = e.target.closest('.fn');
       if (fn && fn.getAttribute('contenteditable') === 'true') return;   // editing, don't switch
       var row = e.target.closest('.filerow');
