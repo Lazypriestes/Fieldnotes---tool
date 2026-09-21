@@ -1094,7 +1094,7 @@
       if (ev.target.closest('.pdot,.pn-corner,.pn-del,.pn-tx')) return;
       ev.stopPropagation();
       var s0 = toWorld(ev.clientX, ev.clientY), x0 = note.x, y0 = note.y, moved = false;
-      el.setPointerCapture(ev.pointerId); el.classList.add('grabbing'); noteBusy = true;
+      try { el.setPointerCapture(ev.pointerId); } catch (_e) {}; el.classList.add('grabbing'); noteBusy = true;
       function mv(e2) {
         var p = toWorld(e2.clientX, e2.clientY);
         if (!moved && Math.abs(p.x - s0.x) < 3 && Math.abs(p.y - s0.y) < 3) return;
@@ -1141,7 +1141,7 @@
     breakFollow();
     pan = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y };
     viewport.classList.add('dragging');
-    viewport.setPointerCapture(e.pointerId);
+    try { viewport.setPointerCapture(e.pointerId); } catch (_e) {};
   });
   viewport.addEventListener('pointermove', function (e) {
     if (!pan) return;
@@ -1356,7 +1356,7 @@
     var p = toWorld(e.clientX, e.clientY);
     drag = { n: n, ox: p.x - n.x, oy: p.y - n.y, started: false, pid: e.pointerId };
     dragMoved = false;
-    el.setPointerCapture(e.pointerId);
+    try { el.setPointerCapture(e.pointerId); } catch (_e) {};
   });
 
   world.addEventListener('pointermove', function (e) {
@@ -1671,7 +1671,7 @@
       if (ev.target.closest('.tx,.del')) return;
       ev.stopPropagation();
       var s0 = toWorld(ev.clientX, ev.clientY), x0 = st.x, y0 = st.y;
-      el.classList.add('grabbing'); el.setPointerCapture(ev.pointerId);
+      el.classList.add('grabbing'); try { el.setPointerCapture(ev.pointerId); } catch (_e) {};
       function mv(e2) {
         var p = toWorld(e2.clientX, e2.clientY);
         st.x = x0 + (p.x - s0.x); st.y = y0 + (p.y - s0.y);
@@ -1751,7 +1751,7 @@
 
   resizer.addEventListener('pointerdown', function (e) {
     e.preventDefault();
-    resizer.setPointerCapture(e.pointerId);
+    try { resizer.setPointerCapture(e.pointerId); } catch (_e) {};
     resizer.classList.add('on');
     var r = bodyEl.getBoundingClientRect(), startX = e.clientX, moved = false;
     function mv(ev) {
@@ -2270,7 +2270,7 @@
     track.addEventListener('pointerdown', function (ev) {
       if (liveIdx < 0 || ev.target.classList.contains('tl-mark') || ev.target.classList.contains('tl-rec')) return;
       dragging = true; tlDrag = true;
-      track.setPointerCapture(ev.pointerId);
+      try { track.setPointerCapture(ev.pointerId); } catch (_e) {};
       seekIdx(idxAtFrac(fracAt(ev)), false);
     });
     track.addEventListener('pointermove', function (ev) {

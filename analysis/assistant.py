@@ -238,14 +238,30 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj), "application/json")
 
+    def _body(self):
+        """Parse a JSON request body, tolerating empty/malformed input."""
+        try:
+            n = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            n = 0
+        try:
+            return json.loads(self.rfile.read(n) or b"{}")
+        except (ValueError, TypeError):
+            return {}
+
+    def _after(self, url):
+        try:
+            return int(parse_qs(url.query).get("after", ["0"])[0])
+        except (ValueError, TypeError):
+            return 0
+
     def do_OPTIONS(self):
         self._send(204, b"", "text/plain")
 
     def do_POST(self):
         url = urlparse(self.path)
         if url.path == "/api/plan":
-            n = int(self.headers.get("Content-Length", 0))
-            data = json.loads(self.rfile.read(n) or b"{}")
+            data = self._body()
             qs = data.get("questions", [])
             with LOCK:
                 PLAN["by_id"] = {q["id"]: q for q in qs}
@@ -257,8 +273,7 @@ class Handler(BaseHTTPRequestHandler):
                 COVERAGE.clear()
             return self._json({"ok": True, "questions": len(qs)})
         if url.path == "/api/start":
-            n = int(self.headers.get("Content-Length", 0))
-            data = json.loads(self.rfile.read(n) or b"{}")
+            data = self._body()
             try:
                 info = start_pipeline(data.get("source", "sample"), data.get("device"), data.get("names"))
                 return self._json({"ok": True, **info})
@@ -268,8 +283,7 @@ class Handler(BaseHTTPRequestHandler):
             stop_pipeline()
             return self._json({"ok": True, "running": False})
         if url.path == "/api/cues":
-            n = int(self.headers.get("Content-Length", 0))
-            data = json.loads(self.rfile.read(n) or b"{}")
+            data = self._body()
             q = (data.get("question") or "").strip()
             if not q:
                 return self._json({"ok": False, "cues": []})
@@ -289,7 +303,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, b"<h1>assistant running</h1><p>no --ui set</p>", "text/html")
 
         if url.path == "/api/segments":
-            after = int(parse_qs(url.query).get("after", ["0"])[0])
+            after = self._after(url)
             try:
                 conn = read_only(self.db_path)
             except sqlite3.OperationalError:
@@ -308,7 +322,7 @@ class Handler(BaseHTTPRequestHandler):
                 for r in rows]})
 
         if url.path == "/api/coverage":
-            after = int(parse_qs(url.query).get("after", ["0"])[0])
+            after = self._after(url)
             with LOCK:
                 events = [e for e in COVERAGE if e["id"] > after]
                 has_plan = bool(PLAN["by_id"])
