@@ -491,6 +491,27 @@
   .pal li .ptp{margin-left:auto;flex:none;font-size:10px;color:var(--faint)}
   .pal .none{padding:14px 15px;font-size:12px;color:var(--faint)}
 
+  .helpscrim{position:absolute;inset:0;background:rgba(21,24,27,.32);z-index:40;
+    display:flex;justify-content:center;align-items:flex-start;padding:56px 16px 16px}
+  .helpscrim[hidden]{display:none}
+  .helppanel{width:680px;max-width:100%;max-height:82vh;overflow:auto;background:var(--surface);
+    border:1px solid var(--line);border-radius:10px;box-shadow:0 24px 60px -24px rgba(21,24,27,.45)}
+  .help-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--hair)}
+  .help-hd b{font-size:13px;color:var(--ink)}
+  .help-x{color:var(--faint);font-size:18px;line-height:1;padding:0 4px}
+  .help-x:hover{color:var(--ink)}
+  .help-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 24px;padding:10px 16px 14px}
+  @media (max-width:560px){.help-grid{grid-template-columns:1fr}}
+  .help-sec{padding:6px 0}
+  .help-sec h4{margin:7px 0 3px;font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.1em;color:var(--accent)}
+  .help-sec > div{display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px}
+  .help-sec > div span{flex:1;color:var(--ink)}
+  .help-sec em{color:var(--muted);font-style:normal;font-size:11px}
+  .helppanel kbd{font-family:ui-monospace,Menlo,monospace;font-size:10px;background:#F1F2F3;
+    border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:#4C545A;white-space:nowrap}
+  .help-ft{padding:9px 16px;border-top:1px solid var(--hair);font-size:11px;color:var(--faint);text-align:center}
+  :root[data-theme="dark"] .helppanel kbd{background:#22272C;color:#B8BEC3}
+
   /* ---------- dark mode ---------- */
   :root[data-theme="dark"]{
     --surface:#16191C; --ink:#E7EAEC; --muted:#8A9198; --faint:#646B71;
@@ -618,6 +639,7 @@
         <button id="zoomIn" aria-label="Zoom in">+</button>
         <button id="fit" class="mono">FIT</button>
         <button id="themeBtn" class="mono" title="Toggle dark mode" aria-label="Toggle dark mode">☾</button>
+        <button id="helpBtn" class="mono" title="Controls & shortcuts (?)" aria-label="Help">?</button>
       </div>
 
       <div class="filemenu" id="filemenu">
@@ -646,6 +668,62 @@
       <span class="sw g" style="margin-left:8px"></span> answered
     </span>
     <span class="mono" id="posLabel"></span>
+  </div>
+
+  <div class="helpscrim" id="helpScrim" hidden>
+    <div class="helppanel" role="dialog" aria-label="Controls and shortcuts">
+      <div class="help-hd"><b>Fieldnotes — controls</b><button class="help-x" id="helpX" aria-label="Close">×</button></div>
+      <div class="help-grid">
+        <div class="help-sec"><h4>Run</h4>
+          <div><span>Demo (canned)</span><kbd>▶</kbd></div>
+          <div><span>Go live · pick source</span><kbd>◉</kbd></div>
+          <div><span>Pause / stop</span><kbd>⏸</kbd><kbd>■</kbd></div>
+          <div><span>Live sources</span><em>Sample · Mic · System/Teams</em></div>
+        </div>
+        <div class="help-sec"><h4>Canvas</h4>
+          <div><span>Pan</span><em>drag empty space</em></div>
+          <div><span>Zoom</span><kbd>⌥ scroll</kbd></div>
+          <div><span>Fit / zoom / dark</span><em>top-left</em></div>
+          <div><span>Switch trees / new</span><em>file menu ▾</em></div>
+        </div>
+        <div class="help-sec"><h4>Keys</h4>
+          <div><span>Edit mode</span><kbd>E</kbd></div>
+          <div><span>Cycle scene</span><kbd>S</kbd></div>
+          <div><span>Follow camera</span><kbd>F</kbd></div>
+          <div><span>Jump to question</span><kbd>⌘K</kbd></div>
+          <div><span>Undo / redo</span><kbd>⌘Z</kbd><kbd>⌘⇧Z</kbd></div>
+        </div>
+        <div class="help-sec"><h4>Edit mode</h4>
+          <div><span>Rename</span><em>double-click node</em></div>
+          <div><span>Reorder</span><em>drag node</em></div>
+          <div><span>Sibling / child</span><kbd>⏎</kbd><kbd>⇥</kbd></div>
+          <div><span>Delete</span><kbd>⌫</kbd></div>
+        </div>
+        <div class="help-sec"><h4>Live capture</h4>
+          <div><span>Add note</span><kbd>N</kbd></div>
+          <div><span>Add question</span><kbd>Q</kbd></div>
+          <div><span>Record clip · hold=longer</span><kbd>R</kbd></div>
+          <div><span>Rate a clip</span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>N</kbd></div>
+        </div>
+        <div class="help-sec"><h4>Notes</h4>
+          <div><span>Add note</span><em>double-click / dock</em></div>
+          <div><span>Connect to a question</span><em>drag a side dot →</em></div>
+          <div><span>Mind-map only</span><em>corner icon → dot</em></div>
+          <div><span>Delete</span><em>× on hover</em></div>
+        </div>
+        <div class="help-sec"><h4>Inspector (right)</h4>
+          <div><span>Edit question text</span><em>click field</em></div>
+          <div><span>Cues: asking / answered</span><em>+ add · × remove</em></div>
+          <div><span>Auto-generate cues</span><kbd>✦ auto</kbd> <em>(local AI)</em></div>
+        </div>
+        <div class="help-sec"><h4>Timeline (live)</h4>
+          <div><span>Scrub to the past</span><em>drag the head</em></div>
+          <div><span>Back to now</span><kbd>GO LIVE</kbd></div>
+          <div><span>Answered-ahead</span><em>amber marks</em></div>
+        </div>
+      </div>
+      <div class="help-ft">Everything runs locally · <kbd>?</kbd> or <kbd>Esc</kbd> to close</div>
+    </div>
   </div>
 
   <div class="scrim" id="scrim" hidden>
@@ -1189,6 +1267,11 @@
     this.textContent = dark ? '☾' : '☀';
   });
 
+  function toggleHelp(on) { $('helpScrim').hidden = (on === undefined) ? !$('helpScrim').hidden : !on; }
+  $('helpBtn').addEventListener('click', function () { toggleHelp(); });
+  $('helpX').addEventListener('click', function () { toggleHelp(false); });
+  $('helpScrim').addEventListener('mousedown', function (e) { if (e.target === $('helpScrim')) toggleHelp(false); });
+
   var nrTimer = null;
   function nearestTopic() {
     clearTimeout(nrTimer);
@@ -1586,6 +1669,8 @@
   scrim.addEventListener('mousedown', function (e) { if (e.target === scrim) closePal(); });
   $('palBtn').addEventListener('click', openPal);
   document.addEventListener('keydown', function (e) {
+    if (!$('helpScrim').hidden) { if (e.key === 'Escape' || e.key === '?') { e.preventDefault(); toggleHelp(false); } return; }
+    if (e.key === '?' && !e.metaKey && !e.ctrlKey && !document.querySelector('[contenteditable="true"]:focus')) { e.preventDefault(); toggleHelp(true); return; }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPal(); return; }
     if (!scrim.hidden) {
       if (e.key === 'Escape') closePal();

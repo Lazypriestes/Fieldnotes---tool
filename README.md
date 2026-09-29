@@ -51,9 +51,14 @@ Sources:
   the default, ideal for a quick demo.
 - **Microphone** — captures your mic (in-person interviews). First run asks macOS for mic
   permission.
-- **A real call** (Zoom/Teams/video system audio) needs a loopback driver —
-  `brew install blackhole-2ch` — then set the mic option to your BlackHole/Aggregate device
-  in `analysis/assistant.py` (or run the pipeline manually, below). See `diarization/README.md`.
+- **System audio (Teams)** — captures a Teams/Zoom call or any system audio with **no
+  loopback driver** and no output rerouting (volume keys keep working). Uses a
+  ScreenCaptureKit helper (`diarization/capture/`, built by `setup.sh`); first run asks
+  for **Screen Recording** permission for your terminal. The clean way to capture a call.
+- **A real call via BlackHole** (fallback) — `brew install blackhole-2ch`, then run the
+  pipeline against your BlackHole/Aggregate device. More invasive; see `diarization/README.md`.
+
+Press **?** in the app for a full controls cheat-sheet.
 
 Manual two-terminal way still works if you prefer it:
 
