@@ -56,6 +56,17 @@ else
   echo "      install from https://ollama.com , then:  ollama pull $MODEL"
 fi
 
+# --- 3b. build the optional System-audio capture helper (BlackHole-free) ------
+if command -v swiftc >/dev/null 2>&1; then
+  if bash diarization/capture/build.sh >/dev/null 2>&1; then
+    ok "system-audio capture helper built (◉ → 'System audio')"
+  else
+    warn "capture helper build failed — 'System audio' source unavailable (BlackHole/mic still work)"
+  fi
+else
+  warn "swiftc not found — 'System audio' capture unavailable. For it: xcode-select --install, then diarization/capture/build.sh"
+fi
+
 # --- 4. warm up the models (first pipeline run downloads them; do it now) ----
 if [ "${FN_SKIP_WARMUP:-}" = "1" ]; then
   warn "skipping model warm-up (FN_SKIP_WARMUP=1) — they download on first live run"

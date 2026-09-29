@@ -38,20 +38,25 @@ SAMPLE = os.path.join(DIAR, "sample_interview.wav")
 OLLAMA_URL = "http://localhost:11434/api/chat"
 
 # ---- diarization pipeline as a managed subprocess -----------------------
-PIPE = None                                              # Popen handle, or None
-PIPE_LOG = None                                          # its open log file handle
+CAPTURE = os.path.join(DIAR, "capture", "systemaudio")   # optional SCK helper (built separately)
+PIPE = None                                              # pipeline Popen, or None
+CAP = None                                               # capture-helper Popen, or None
+PIPE_LOG = None
 PIPE_INFO = {"running": False, "source": None}
 
-def stop_pipeline():
-    global PIPE, PIPE_LOG
-    if PIPE and PIPE.poll() is None:
+def _end(p):
+    if p and p.poll() is None:
         try:
-            PIPE.terminate()
-            try: PIPE.wait(timeout=5)
-            except subprocess.TimeoutExpired: PIPE.kill()
+            p.terminate()
+            try: p.wait(timeout=5)
+            except subprocess.TimeoutExpired: p.kill()
         except Exception:
             pass
-    PIPE = None
+
+def stop_pipeline():
+    global PIPE, CAP, PIPE_LOG
+    _end(PIPE); _end(CAP)          # kill the capture helper too, if any
+    PIPE = None; CAP = None
     if PIPE_LOG:
         try: PIPE_LOG.close()
         except Exception: pass
@@ -59,17 +64,29 @@ def stop_pipeline():
     PIPE_INFO.update(running=False, source=None)
 
 def start_pipeline(source, device, names):
-    """Spawn diarization/pipeline.py. source: 'sample' | 'device'."""
-    global PIPE, PIPE_LOG
+    """Spawn diarization/pipeline.py. source: 'sample' | 'device' | 'system'.
+    'system' pipes the ScreenCaptureKit helper's PCM into --source stdin (no BlackHole)."""
+    global PIPE, CAP, PIPE_LOG
     stop_pipeline()
     names = names or "Interviewer,Candidate"
-    args = [sys.executable, PIPELINE, "--reset", "--names", names]
-    if source == "sample":
-        args += ["--source", "file", "--path", SAMPLE]      # realtime pacing (no --fast) = feels live
-    else:
-        args += ["--source", "device", "--device", device or "MacBook Pro Microphone"]
     PIPE_LOG = open(os.path.join(DIAR, "pipeline.log"), "w")
-    PIPE = subprocess.Popen(args, cwd=DIAR, stdout=PIPE_LOG, stderr=subprocess.STDOUT)
+    base = [sys.executable, PIPELINE, "--reset", "--names", names]
+    if source == "system":
+        if not os.path.exists(CAPTURE):
+            PIPE_LOG.write("[system] capture helper not built. Run: diarization/capture/build.sh\n")
+            PIPE_LOG.flush()
+            raise FileNotFoundError("capture helper not built (diarization/capture/build.sh)")
+        cap_args = [CAPTURE] + (["--app", device] if device else [])   # device carries an optional app name
+        CAP = subprocess.Popen(cap_args, stdout=subprocess.PIPE, stderr=PIPE_LOG)
+        PIPE = subprocess.Popen(base + ["--source", "stdin"], cwd=DIAR,
+                                stdin=CAP.stdout, stdout=PIPE_LOG, stderr=subprocess.STDOUT)
+        CAP.stdout.close()          # let the helper get SIGPIPE if the pipeline dies
+    elif source == "sample":
+        PIPE = subprocess.Popen(base + ["--source", "file", "--path", SAMPLE],
+                                cwd=DIAR, stdout=PIPE_LOG, stderr=subprocess.STDOUT)
+    else:  # device (mic / BlackHole)
+        PIPE = subprocess.Popen(base + ["--source", "device", "--device", device or "MacBook Pro Microphone"],
+                                cwd=DIAR, stdout=PIPE_LOG, stderr=subprocess.STDOUT)
     PIPE_INFO.update(running=True, source=source)
     return PIPE_INFO.copy()
 

@@ -19,3 +19,7 @@ canvas/_backups/
 
 # runtime pipeline log
 diarization/pipeline.log
+
+# compiled SCK capture helper (built by diarization/capture/build.sh)
+diarization/capture/systemaudio
+diarization/capture/systemaudio.dSYM/

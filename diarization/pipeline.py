@@ -278,6 +278,28 @@ def device_source(device):
             time.sleep(0.1)
 
 
+def stdin_source():
+    """Read raw PCM from stdin — the fixed capture contract: 16 kHz, mono, float32,
+    little-endian. Any external capturer that emits this (the SCK helper in
+    capture/, ffmpeg, etc.) plugs in here without the pipeline knowing how audio
+    was grabbed. Decouples the capture *method* from the pipeline."""
+    stream = sys.stdin.buffer
+    nbytes = BLOCK * 4                       # float32 = 4 bytes/sample
+    print("[capture] reading PCM from stdin (16 kHz mono f32)   (ctrl-c to stop)", flush=True)
+    while not stop.is_set():
+        buf = b""
+        while len(buf) < nbytes:             # pipes can short-read; fill a full block
+            chunk = stream.read(nbytes - len(buf))
+            if not chunk:
+                break
+            buf += chunk
+        if not buf:                          # EOF -> capturer ended
+            break
+        if len(buf) < nbytes:
+            buf += b"\x00" * (nbytes - len(buf))
+        audio_q.put(np.frombuffer(buf, dtype="<f4").astype(np.float32).copy())
+
+
 def run_source(fn, *args):
     """Guarantee the end-of-stream sentinel, so a bad --device can't hang the pipeline."""
     try:
@@ -465,7 +487,7 @@ def asr_worker(transcriber, store, session_id, names):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--source", choices=["file", "device"], default="file")
+    p.add_argument("--source", choices=["file", "device", "stdin"], default="file")
     p.add_argument("--path", default=os.path.join(HERE, "sample_interview.wav"))
     p.add_argument("--device", default=None, help="input device name or index")
     p.add_argument("--fast", action="store_true",
@@ -536,7 +558,7 @@ def main():
     diarizer = load_diarizer(SORTFORMER_MODEL)
 
     store = Store(args.db)
-    src = args.path if args.source == "file" else str(args.device)
+    src = args.path if args.source == "file" else "stdin" if args.source == "stdin" else str(args.device)
     session_id = store.start_session(f"{args.source}:{src}")
     print(f"[init] session {session_id} -> {args.db}\n")
 
@@ -553,6 +575,8 @@ def main():
     if args.source == "file":
         threads.append(threading.Thread(
             target=run_source, args=(file_source, args.path, not args.fast), daemon=True))
+    elif args.source == "stdin":
+        threads.append(threading.Thread(target=run_source, args=(stdin_source,), daemon=True))
     else:
         threads.append(threading.Thread(
             target=run_source, args=(device_source, args.device), daemon=True))
