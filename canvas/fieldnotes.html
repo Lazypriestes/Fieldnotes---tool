@@ -2073,6 +2073,7 @@
       body: JSON.stringify(buildPlan()) }).catch(function () {});
     // note the session already in the DB so we can ignore it, THEN start a fresh pipeline
     var src = ($('srcSel') && $('srcSel').value) || 'sample';
+    LIVE.src = src; LIVE.startedAt = Date.now();
     fetch(API + '/api/segments?after=0').then(function (r) { return r.json(); }).then(function (d) {
       LIVE.staleSession = d.session || null;
       return fetch(API + '/api/start', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2126,6 +2127,18 @@
       d.events.forEach(applyCoverage);
       if (d.events.length) LIVE.lastCov = d.events[d.events.length - 1].id;
     }).catch(function () {});
+    // surface a stalled capture instead of hanging on "waiting" forever
+    if (liveIdx < 0 && Date.now() - (LIVE.startedAt || 0) > 9000) {
+      fetch(API + '/api/status').then(function (r) { return r.json(); }).then(function (s) {
+        if (!s.running && liveIdx < 0) {
+          var rec = caps.querySelector('.rec');
+          if (rec) rec.textContent =
+            LIVE.src === 'system' ? 'Capture stopped — grant Screen Recording & run ./start.sh in your terminal'
+            : LIVE.src === 'device' ? 'Capture stopped — grant Microphone permission & restart the server'
+            : 'Capture stopped before any audio — see diarization/pipeline.log';
+        }
+      }).catch(function () {});
+    }
   }
 
   function resetLiveSession() {                 // a new diarization session started — clear the stale view
