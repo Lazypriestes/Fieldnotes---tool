@@ -48,7 +48,8 @@ OLLAMA_URL = "http://localhost:11434/api/chat"
 # Roles: "host" = this Mac without a code (full control), "viewer" = anyone presenting the code
 # (watch + notes; can't start/stop/pause the recording or see other saved interviews).
 SHARE = {"code": None}
-HOST_ONLY_POST = {"/api/start", "/api/stop", "/api/pause", "/api/plan", "/api/session/save"}
+HOST_ONLY_POST = {"/api/start", "/api/stop", "/api/pause", "/api/plan", "/api/session/save", "/api/shared/tree"}
+SHARED_TREE = {"version": 0, "name": None, "data": None, "notes": []}   # the host's tree, for viewers
 HOST_ONLY_GET = {"/api/sessions", "/api/session"}
 SESS_DIR = os.path.join(ROOT, "sessions")                # autosaved interview sessions (gitignored)
 CAPTURE = os.path.join(DIAR, "capture", "systemaudio")   # optional SCK helper (built separately)
@@ -715,6 +716,17 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     SPEAKER_OVERRIDES["map"].pop(raw, None)
             return self._json({"ok": True})
+        if url.path == "/api/shared/tree":
+            # the recording computer publishes the tree it is interviewing from
+            data = self._body()
+            if not isinstance(data.get("data"), str):
+                return self._json({"ok": False, "error": "no tree"}, 400)
+            with LOCK:
+                if data["data"] != SHARED_TREE["data"] or data.get("name") != SHARED_TREE["name"]:
+                    SHARED_TREE.update(version=SHARED_TREE["version"] + 1, name=str(data.get("name") or "Interview"),
+                                       data=data["data"], notes=data.get("notes") or [])
+                v = SHARED_TREE["version"]
+            return self._json({"ok": True, "version": v})
         if url.path == "/api/session/save":
             data = self._body()
             try:
@@ -822,6 +834,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": True, "data": json.load(f)})
             except (ValueError, OSError) as e:
                 return self._json({"ok": False, "error": f"no such session ({e})"}, 404)
+        if url.path == "/api/shared/tree":
+            with LOCK:
+                t = dict(SHARED_TREE)
+            return self._json({"ok": t["data"] is not None, **t})
         if url.path == "/api/whoami":
             return self._json({"role": role, "share": bool(SHARE["code"])})
         if url.path == "/api/status":

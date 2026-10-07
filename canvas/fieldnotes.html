@@ -396,6 +396,9 @@
   .xbtn{font:inherit;font-size:12.5px;padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
   .xbtn.primary{background:var(--ink);border-color:var(--ink);color:var(--surface)}
   .xbtn:disabled{opacity:.5;cursor:wait}
+  /* second interviewer (viewer) */
+  .app.viewer #liveBtn,.app.viewer #srcSel,.app.viewer #iv2Sel,.app.viewer #runBtn,.app.viewer #pauseBtn,
+  .app.viewer .dbtn[data-act="edit"]{display:none!important}
   /* off the record */
   .tl-off{position:absolute;border-radius:3px;pointer-events:auto;z-index:1;opacity:.85;
     background:repeating-linear-gradient(135deg,#B9B29A 0 4px,#E7E2D2 4px 8px)}
@@ -2572,6 +2575,7 @@
 
   /* ---------- edit mode ---------- */
   function setEdit(on) {
+    if (on && VIEWER) return;                 // the tree belongs to the recording computer
     editing = !!on;
     app.classList.toggle('editing', editing);
     editBtn.setAttribute('aria-pressed', String(editing));
@@ -2775,6 +2779,7 @@
         body: JSON.stringify({ source: src, split: src === 'call' ? $('iv2Sel').value : 'none' }) });
     }).catch(function () {});
     enterLiveView('Connecting · local diarization');
+    publishTree();
     LIVE.poll = setInterval(livePoll, 1000);
     SESS.id = null; SESS.lastSig = '';
     SESS.timer = setInterval(function () { autosave(false); }, 10000);   // the session log
@@ -2881,7 +2886,9 @@
     LIVE.byId[seg.id] = i;
     computeTimeline();
     liveIdx = i;
-    var rec = caps.querySelector('.rec'); if (rec) rec.textContent = 'Recording · live · local';
+    var rec = caps.querySelector('.rec');           // a line finishing after "off the record" was clicked
+    if (rec) rec.textContent = LIVE.off ? 'Off the record · nothing is transcribed'
+      : VIEWER ? 'Watching · live from the recording computer' : 'Recording · live · local';
     var c = caps.querySelector('.clock'); if (c) c.textContent = fmtTime(TBASE + seg.t_end);
     if (!reviewing) { viewIdx = i; pushLine(seg.speaker, seg.text, isInt); }
     updateTL();
@@ -3044,7 +3051,7 @@
     if (LIVE.poll) { clearInterval(LIVE.poll); LIVE.poll = null; }
     var onlyReviewing = LIVE.restored && !LIVE.attached;
     LIVE.restored = LIVE.attached = false;
-    if (liveReal && !onlyReviewing) fetch(API + '/api/stop', { method: 'POST' }).catch(function () {});   // stop the pipeline too
+    if (liveReal && !onlyReviewing && !VIEWER) fetch(API + '/api/stop', { method: 'POST' }).catch(function () {});   // stop the pipeline too
     STEPS = SCRIPT; TBASE = 12; liveReal = false; LIVE.on = false;
     app.classList.remove('live-real');
     if (liveBtn) liveBtn.classList.remove('on');
@@ -3684,7 +3691,7 @@
             userMarks.map(function (m) { return m.text.length; }).join(',')].join('|');
   }
   function autosave(force) {
-    if (!liveReal || liveIdx < 0 || (LIVE.restored && !LIVE.attached)) return;
+    if (VIEWER || !liveReal || liveIdx < 0 || (LIVE.restored && !LIVE.attached)) return;
     var sig = sessionSig();
     if (!force && sig === SESS.lastSig) return;
     var id = SESS.id || (SESS.id = LIVE.session || ('s' + Date.now().toString(36)));
@@ -3769,6 +3776,7 @@
     SESS.last = d; SESS.lastSig = ''; SESS.savedAt = null; SESS.err = null;
     if (attach) {                           // pick the running pipeline back up where we left off
       SESS.id = d.session_id;
+      publishTree();
       LIVE.poll = setInterval(livePoll, 1000);
       SESS.timer = setInterval(function () { autosave(false); }, 10000);
       fetch(API + '/api/status').then(function (r) { return r.json(); }).then(function (st) {
@@ -3802,7 +3810,10 @@
         $('sStat').className = 'sstat resume';
         $('sStat').textContent = 'An interview is still running on the server. Resume it to carry on where you left off — nothing is lost.';
       }
-    }).catch(function () { list.innerHTML = '<div class="empty">No backend — start the server (./start.sh).</div>'; });
+    }).catch(function () {
+      list.innerHTML = '<div class="empty">' + (VIEWER ? 'Saved interviews stay on the recording computer. You can still download this one.'
+        : 'No backend — start the server (./start.sh).') + '</div>';
+    });
   }
   function openSessions() {
     sessMsg('');
@@ -3833,6 +3844,7 @@
   });
   // after a reload: if the server is still recording a session we have a log for, offer to resume
   function checkResume() {
+    if (VIEWER) return;
     Promise.all([
       fetch(API + '/api/status').then(function (r) { return r.json(); }),
       fetch(API + '/api/segments?after=0').then(function (r) { return r.json(); }),
@@ -3886,6 +3898,60 @@
     applySpeakerNames(list);
   });
 
+  /* ================= share mode: the second interviewer's view =========================
+     With ./start.sh --share, another computer can open the join link. Its page asks the server
+     who it is; as a "viewer" it shows the recording Mac's tree and follows the live interview
+     (transcript, coverage, off the record). Recording controls stay on the recording Mac. */
+  var VIEWER = false, viewerTree = 0, viewerTimer = null;
+  function publishTree() {
+    if (VIEWER) return;
+    var f = FILES.filter(function (x) { return x.id === ACTIVE; })[0] || {};
+    fetch(API + '/api/shared/tree', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: f.name || 'Interview', data: snap(), notes: pageNotes.map(serializeNote) }) }).catch(function () {});
+  }
+  function enterViewerMode() {
+    VIEWER = true;
+    app.classList.add('viewer');
+    if (editing) setEdit(false);
+    hint.textContent = 'JOINED AS SECOND INTERVIEWER · WAITING FOR THE INTERVIEW TO START';
+    viewerSync();
+    viewerTimer = setInterval(viewerSync, 2000);
+  }
+  function viewerSync() {
+    Promise.all([
+      fetch(API + '/api/status').then(function (r) { return r.json(); }),
+      fetch(API + '/api/shared/tree').then(function (r) { return r.json(); })
+    ]).then(function (res) {
+      var st = res[0], tr = res[1];
+      if (tr.ok && tr.version !== viewerTree) {                 // the recording Mac's tree (changed)
+        viewerTree = tr.version;
+        var f = FILES.filter(function (x) { return x.id === 'shared-view'; })[0];
+        if (!f) { f = { id: 'shared-view', name: '', data: tr.data, notes: [] }; FILES.push(f); }
+        f.name = '⇄ ' + tr.name; f.data = tr.data; f.notes = tr.notes || [];
+        if (ACTIVE !== 'shared-view') { saveActive(); ACTIVE = 'shared-view'; }
+        selected = null; restore(tr.data); rebuildPageNotes(f.notes);
+        updateFileUI();
+        if (live && liveIdx >= 0) rebuildTo(reviewing ? viewIdx : liveIdx, false);   // keep the colours
+      }
+      if (st.running && (!live || (LIVE.restored && !LIVE.attached))) {   // an interview is on: follow it
+        enterLiveView('Watching · live from the recording computer');
+        LIVE.src = st.source;
+        LIVE.poll = setInterval(livePoll, 1000);
+        livePoll();
+      } else if (!st.running && live && !LIVE.restored) {       // it ended: keep the transcript readable
+        if (LIVE.poll) { clearInterval(LIVE.poll); LIVE.poll = null; }
+        LIVE.restored = true; LIVE.attached = false;
+        if (LIVE.off) setOffRecord(false, true);
+        var rec = caps.querySelector('.rec'); if (rec) rec.textContent = 'Interview ended · you can still read and export it';
+        syncTransport();
+      }
+      if (st.running && live && !LIVE.restored && !!st.off_record !== !!LIVE.off) setOffRecord(!!st.off_record, true);
+    }).catch(function () {});
+  }
+  fetch(API + '/api/whoami').then(function (r) { return r.json(); }).then(function (w) {
+    if (w.role === 'viewer') enterViewerMode();
+  }).catch(function () {});
+
   /* ---------- boot ---------- */
   /* ================= files: multiple trees / blank pages (tldraw-style) ================= */
   var FILES = [], ACTIVE = null, filesTimer = null, BUILTIN = null;
@@ -3897,6 +3963,7 @@
     if (f) { f.data = snap(); f.notes = pageNotes.map(serializeNote); persistFiles(); }
   }
   function scheduleFileSave() {
+    if (live && liveReal && !VIEWER) setTimeout(publishTree, 0);   // keep a joined viewer's tree in step
     if (!ACTIVE) return;
     clearTimeout(filesTimer);
     filesTimer = setTimeout(saveActive, 1000);
