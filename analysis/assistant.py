@@ -176,20 +176,51 @@ def ollama_matches(model, plan_text, speaker, text):
     return clean
 
 
-def ollama_cues(model, question, kind="answered"):
-    """Short cue phrases for a question. kind='answered' = signals the answer was given;
-    kind='asking' = paraphrases the interviewer might use to ASK it."""
+_GENERIC = set("""a an the and or of to in on for with at by from as is are was were be been it its this that
+these those i you we they he she my your our their me us them do does did done have has had get got make made
+thing things stuff something anything work working job really just very much many some any lot lots kind sort
+way ways time times about like also well good great important yes no maybe""".split())
+
+
+def _cue_words(c):
+    return re.findall(r"[a-z0-9']+", c.lower())
+
+
+def ollama_cues(model, question, kind="answered", ctx=None):
+    """Cue phrases for one planned question, using its context so the cues mean what the
+    question means here and don't overlap the questions around it.
+    kind='answered': what a real ANSWER would contain (not the question's own words - the
+    interviewer says those when asking). kind='asking': how an interviewer would phrase it.
+    ctx: {interview, topic, parent, siblings: [...]}."""
+    ctx = ctx or {}
+    lines = []
+    if ctx.get("interview"):
+        lines.append(f"INTERVIEW: {ctx['interview']}")
+    if ctx.get("topic"):
+        lines.append(f"TOPIC: {ctx['topic']}")
+    if ctx.get("parent"):
+        lines.append(f"THIS IS A FOLLOW-UP TO: {ctx['parent']}")
+    lines.append(f"QUESTION: {question}")
+    sibs = [x for x in (ctx.get("siblings") or []) if isinstance(x, str) and x.strip()][:10]
+    if sibs:
+        lines.append("OTHER QUESTIONS NEARBY (your cues must NOT fit these):\n" + "\n".join(f"- {x}" for x in sibs))
+    context = "\n".join(lines)
     if kind == "asking":
-        prompt = ("For an interview question, list 4-6 SHORT phrases the INTERVIEWER might say "
-                  "when asking it (paraphrases or lead-ins). Return ONLY JSON: {\"cues\":[\"...\"]}. "
-                  "Each 1-4 words, lowercase, no duplicates.\n\nQUESTION: " + question)
+        task = ("List 5 ways the INTERVIEWER might actually phrase or lead into THIS question in a "
+                "real conversation: natural paraphrases and its key phrases. Rules: 2-6 words each, "
+                "lowercase; specific to this question (a phrase that would also fit the nearby "
+                "questions is useless); no generic filler like 'tell me more' or 'at work'.")
     else:
-        prompt = ("For an interview question, list 4-6 SHORT cue phrases or keywords that, if the "
-                  "interviewee says them, signal they've answered it. Prefer concrete nouns/verbs "
-                  "over generic words. Return ONLY JSON: {\"cues\":[\"...\"]}. Each 1-3 words, "
-                  "lowercase, no duplicates.\n\nQUESTION: " + question)
+        task = ("List 6 cues that the CANDIDATE's reply would contain if it truly answers THIS "
+                "question, read in its context above: concrete things, examples, numbers or "
+                "domain terms they would mention, or short answer-shaped phrases (e.g. 'about "
+                "five people', 'hand it to engineering'). Rules: 1-4 words each, lowercase; do "
+                "NOT just repeat words of the question (the interviewer says those when asking); "
+                "no generic words (team, work, process, thing); each cue should point to THIS "
+                "question rather than the nearby ones.")
+    prompt = (context + "\n\n" + task + "\nReturn ONLY JSON: {\"cues\": [\"...\"]}")
     body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}],
-                       "stream": False, "format": "json", "options": {"temperature": 0.3}}).encode()
+                       "stream": False, "format": "json", "options": {"temperature": 0.2}}).encode()
     req = urllib.request.Request(OLLAMA_URL, data=body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=60) as r:
         out = json.load(r)
@@ -197,11 +228,22 @@ def ollama_cues(model, question, kind="answered"):
         raw = json.loads(out["message"]["content"]).get("cues", [])
     except Exception:
         return []
+    q_words = set(_cue_words(question))
+    sib_text = " " + " ".join(sibs).lower() + " "
     seen, cues = set(), []
-    for c in raw:
-        c = str(c).strip().lower()
-        if c and c not in seen:
-            seen.add(c); cues.append(c)
+    for c in raw if isinstance(raw, list) else []:
+        c = re.sub(r"\s+", " ", str(c).strip().lower().strip(".,;:!?\"'"))
+        words = _cue_words(c)
+        if not c or c in seen or not words or len(words) > 6:
+            continue
+        content = [w for w in words if w not in _GENERIC]
+        if not content:                                          # nothing but filler
+            continue
+        if kind == "answered" and all(w in q_words for w in content):
+            continue                                             # just the question's own words
+        if sibs and f" {c} " in sib_text:                        # literally a nearby question's phrase
+            continue
+        seen.add(c); cues.append(c)
     return cues[:8]
 
 
@@ -695,7 +737,8 @@ class Handler(BaseHTTPRequestHandler):
             if not q:
                 return self._json({"ok": False, "cues": []})
             try:
-                return self._json({"ok": True, "cues": ollama_cues(self.model, q, data.get("kind", "answered"))})
+                ctx = data.get("context") if isinstance(data.get("context"), dict) else None
+                return self._json({"ok": True, "cues": ollama_cues(self.model, q, data.get("kind", "answered"), ctx)})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e), "cues": []})
         if url.path == "/api/anonymize":

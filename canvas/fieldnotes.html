@@ -2280,6 +2280,14 @@
     wireCueField(nodeCues, 'answered', 'data-rmcue', 'addCue', 'data-aicues');
   }
 
+  // what the cue generator needs to read a question the way it's meant here
+  function cueContext(n) {
+    var t = topicOf(n), f = FILES.filter(function (x) { return x.id === ACTIVE; })[0];
+    var sibs = (n.parent && n.parent !== ROOT ? n.parent.children : []).filter(function (x) { return x !== n; })
+      .map(function (x) { return x.text; });
+    return { interview: f ? f.name : '', topic: t ? t.text : '', siblings: sibs,
+             parent: n.depth === 2 && n.parent ? n.parent.text : null };
+  }
   function wireCueField(getArr, aiKind, rmAttr, addId, aiAttr) {
     insp.querySelectorAll('[' + rmAttr + ']').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -2313,7 +2321,7 @@
       var n = INDEX[selected]; if (!n) return;
       ai.classList.add('busy'); ai.textContent = '…thinking';
       fetch(API + '/api/cues', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: n.text, kind: aiKind }) })
+        body: JSON.stringify({ question: n.text, kind: aiKind, context: cueContext(n) }) })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           var a = getArr(n);
