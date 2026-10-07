@@ -396,6 +396,19 @@
   .xbtn{font:inherit;font-size:12.5px;padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
   .xbtn.primary{background:var(--ink);border-color:var(--ink);color:var(--surface)}
   .xbtn:disabled{opacity:.5;cursor:wait}
+  /* speakers (who is who) */
+  .caps .spkbtn{font:inherit;font-size:11px;border:1px solid var(--line);background:transparent;color:var(--muted);
+    border-radius:10px;padding:1px 8px;margin-right:8px;cursor:pointer}
+  .caps .spkbtn:hover{border-color:var(--accent);color:var(--accent)}
+  .spkpop{position:fixed;z-index:30;width:300px;background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    box-shadow:0 18px 44px -18px rgba(21,24,27,.45);padding:10px 12px;font-size:12.5px;color:var(--ink)}
+  .spkpop[hidden]{display:none}
+  .spkpop .sphd{display:flex;align-items:center;font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.08em;color:var(--muted);margin-bottom:8px}
+  .spkpop .sphd .sp{flex:1}
+  .spkpop .sprow{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .spkpop .sprow input{flex:1;font:inherit;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}
+  .spkpop .sprow .spm{font-size:10.5px;color:var(--muted);width:88px;text-align:right}
+  .spkpop .sphint{font-size:11px;color:var(--faint);margin-top:4px;line-height:1.4}
   /* session window */
   .sstat{font-size:12.5px;line-height:1.5;margin:0 0 12px;padding:8px 10px;border-radius:8px;background:var(--hair)}
   .sstat.live{background:rgba(78,154,107,.12)}
@@ -772,6 +785,11 @@
           <option value="device">Microphone</option>
           <option value="call">Call: me (mic) + them (system)</option><option value="system">System audio (Teams)</option>
         </select>
+        <select id="iv2Sel" class="srcSel" title="A second interviewer?" hidden>
+          <option value="none">1 interviewer</option>
+          <option value="mic">+1 interviewer in the room</option>
+          <option value="system">+1 interviewer on the call</option>
+        </select>
         <button id="liveBtn" title="Go live — starts diarization" aria-label="Connect live"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3.4" fill="currentColor"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".55"/></svg></button>
         <button id="sessBtn" title="Interview session — autosave log, download, open" aria-label="Interview session"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 2.5h8l2.5 2.5v8.5H3z"/><path d="M5.5 2.5v3.5h5V2.5M5.5 13.5V9.5h5v4"/></svg></button>
       </div>
@@ -839,6 +857,11 @@
           <div class="slist" id="sList"></div>
           <div class="xfoot"><span class="xstatus" id="sMsg"></span><span class="sp"></span><button class="xbtn" data-xclose>Close</button></div>
         </div>
+      </div>
+      <div class="spkpop" id="spkPop" hidden>
+        <div class="sphd">WHO IS WHO<span class="sp"></span><button class="xclose" id="spkClose" aria-label="Close">×</button></div>
+        <div id="spkList"></div>
+        <div class="sphint">Rename anyone, e.g. swap who is the Candidate. Names starting with “Interviewer” count as interviewers.</div>
       </div>
       <div class="toasts" id="toasts"></div>
       <div class="caps" id="caps" hidden></div>
@@ -1288,6 +1311,8 @@
     var map = {}, changed = false;
     list.forEach(function (sp) { map[sp.raw] = sp.name; });
     LIVE.speakers = list;
+    var sb = $('spkBtn'); if (sb) sb.hidden = list.length < 2;
+    if (!$('spkPop').hidden) renderSpeakers();
     STEPS.forEach(function (e) {
       var nm = e.raw && map[e.raw];
       if (nm && nm !== e.w) { e.w = nm; e.a = isInterviewerName(nm); changed = true; }
@@ -1857,7 +1882,7 @@
   /* ---------- pan & zoom ---------- */
   var pan = null;
   viewport.addEventListener('pointerdown', function (e) {
-    var ui = '.zoomctl,.caps,.anode,.sticky,.dock,.transport,.rater,.qnote,.livenote,.worldnote,.filemenu,.pnote,.conn-hit,.mmcard,.mmscript,.mmchips,.mmhit,.xmodal';
+    var ui = '.zoomctl,.caps,.anode,.sticky,.dock,.transport,.rater,.qnote,.livenote,.worldnote,.filemenu,.pnote,.conn-hit,.mmcard,.mmscript,.mmchips,.mmhit,.xmodal,.spkpop';
     var block = layerName === 'notes' ? ui : '.node,.fold,.ghost,' + ui;
     if (e.target.closest(block)) return;
     breakFollow();
@@ -2315,6 +2340,7 @@
   document.addEventListener('keydown', function (e) {
     var xm = document.querySelector('.xmodal:not([hidden])');   // export / import window: no shortcuts
     if (xm) { if (e.key === 'Escape') xm.hidden = true; return; }
+    if (e.target.closest && e.target.closest('input, textarea, select')) return;   // typing a name, not a shortcut
     if (!$('helpScrim').hidden) { if (e.key === 'Escape' || e.key === '?') { e.preventDefault(); toggleHelp(false); } return; }
     if (e.key === '?' && !e.metaKey && !e.ctrlKey && !document.querySelector('[contenteditable="true"]:focus')) { e.preventDefault(); toggleHelp(true); return; }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPal(); return; }
@@ -2436,7 +2462,7 @@
   });
   viewport.addEventListener('dblclick', function (e) {
     if (editing || layerName === 'mindmap') return;
-    if (e.target.closest('.node,.fold,.ghost,.pnote,.sticky,.anode,.zoomctl,.caps,.dock,.transport,.filemenu,.conn-hit,.rater,.qnote,.xmodal')) return;
+    if (e.target.closest('.node,.fold,.ghost,.pnote,.sticky,.anode,.zoomctl,.caps,.dock,.transport,.filemenu,.conn-hit,.rater,.qnote,.xmodal,.spkpop')) return;
     var p = toWorld(e.clientX, e.clientY);
     addPageNote(p.x, p.y);            // notes are addable anytime, right on the canvas
   });
@@ -2738,7 +2764,7 @@
     fetch(API + '/api/segments?after=0').then(function (r) { return r.json(); }).then(function (d) {
       LIVE.staleSession = d.session || null;
       return fetch(API + '/api/start', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: src }) });
+        body: JSON.stringify({ source: src, split: src === 'call' ? $('iv2Sel').value : 'none' }) });
     }).catch(function () {});
     enterLiveView('Connecting · local diarization');
     LIVE.poll = setInterval(livePoll, 1000);
@@ -2764,11 +2790,14 @@
     setDockLive(true);
     caps.hidden = false;
     caps.innerHTML = '<div class="status"><span class="dot"></span><span class="rec">' + esc(label) + '</span>' +
-      '<span class="mono roam"></span><span class="spacer"></span><span class="mono clock">00:00</span></div>' +
+      '<span class="mono roam"></span><span class="spacer"></span>' +
+      '<button class="spkbtn" id="spkBtn" hidden title="Who is who — rename a speaker">Speakers</button>' +
+      '<span class="mono clock">00:00</span></div>' +
       '<div class="tl" id="tl"><button class="tl-live" id="tlLive">LIVE</button>' +
       '<div class="tl-track" id="tlTrack"><div class="tl-elapsed" id="tlElapsed"></div>' +
       '<div class="tl-played" id="tlPlayed"></div><div class="tl-future"></div><div class="tl-head" id="tlHead"></div></div>' +
       '<span class="tl-time mono" id="tlTime">00:00</span></div>';
+    LIVE.speakers = [];
     clearBadges(); clearAnnos(); toasts.innerHTML = '';
     setLayer('tree'); initTL(); coverage(); drawInspector();
     if (liveBtn) liveBtn.classList.add('on');
@@ -3761,10 +3790,43 @@
   // play / pause belong to the Sample demo only
   function syncTransport() {
     var src = ($('srcSel') && $('srcSel').value) || 'sample';
+    $('iv2Sel').hidden = src !== 'call';
+    $('iv2Sel').disabled = live;                       // fixed for the length of an interview
+    if (!live) $('spkPop').hidden = true;
     runBtn.hidden = !live && src !== 'sample';
     if (!live || liveReal) pauseBtn.hidden = true;
   }
   $('srcSel').addEventListener('change', syncTransport);
+  try { var iv2 = localStorage.getItem('fn.iv2'); if (iv2) $('iv2Sel').value = iv2; } catch (_e) {}
+  $('iv2Sel').addEventListener('change', function () { try { localStorage.setItem('fn.iv2', this.value); } catch (_e) {} });
+
+  // who is who: rename a speaker for this interview (shared through the server)
+  function renderSpeakers() {
+    $('spkList').innerHTML = (LIVE.speakers || []).map(function (sp) {
+      return '<div class="sprow"><input data-raw="' + esc(sp.raw) + '" value="' + esc(sp.name) + '" spellcheck="false">' +
+        '<span class="spm">' + (sp.raw !== sp.name ? esc(sp.raw) + ' · ' : '') + Math.round(sp.seconds) + ' s</span></div>';
+    }).join('');
+  }
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('#spkBtn')) {
+      var pop = $('spkPop'), r = e.target.getBoundingClientRect();
+      renderSpeakers();
+      pop.hidden = false;
+      pop.style.left = Math.max(8, Math.min(r.left - 150, innerWidth - 316)) + 'px';
+      pop.style.top = Math.max(8, r.top - pop.offsetHeight - 10) + 'px';
+      return;
+    }
+    if (e.target.closest('#spkClose') || (!$('spkPop').hidden && !e.target.closest('#spkPop'))) $('spkPop').hidden = true;
+  });
+  $('spkPop').addEventListener('change', function (e) {
+    var inp = e.target.closest('input[data-raw]'); if (!inp) return;
+    fetch(API + '/api/speakers', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw: inp.dataset.raw, name: inp.value.trim() }) }).catch(function () {});
+    var list = (LIVE.speakers || []).map(function (sp) {   // relabel right away; the next poll confirms
+      return sp.raw === inp.dataset.raw ? { raw: sp.raw, name: inp.value.trim() || sp.raw, seconds: sp.seconds } : sp;
+    });
+    applySpeakerNames(list);
+  });
 
   /* ---------- boot ---------- */
   /* ================= files: multiple trees / blank pages (tldraw-style) ================= */

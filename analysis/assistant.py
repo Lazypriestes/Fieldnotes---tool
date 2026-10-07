@@ -65,7 +65,7 @@ def stop_pipeline():
         PIPE_LOG = None
     PIPE_INFO.update(running=False, source=None)
 
-def start_pipeline(source, device, names):
+def start_pipeline(source, device, names, split=None):
     """Spawn diarization/pipeline.py. source: 'sample' | 'device' | 'system' | 'call'.
     'system' pipes the Core Audio process-tap helper's PCM into --source stdin (no BlackHole).
     'call' adds your microphone as a second channel: you = mic, them = system audio, so the
@@ -85,6 +85,8 @@ def start_pipeline(source, device, names):
             cap_args.append("--with-mic")
         CAP = subprocess.Popen(cap_args, stdout=subprocess.PIPE, stderr=PIPE_LOG)
         chans = ["--channels", "2"] if source == "call" else []
+        if source == "call" and split in ("mic", "system", "both"):
+            chans += ["--split", split]       # a second interviewer: in the room / on the call
         PIPE = subprocess.Popen(base + ["--source", "stdin"] + chans, cwd=DIAR,
                                 stdin=CAP.stdout, stdout=PIPE_LOG, stderr=subprocess.STDOUT)
         CAP.stdout.close()          # let the helper get SIGPIPE if the pipeline dies
@@ -468,7 +470,11 @@ def speaker_map(conn, session):
     if remotes:
         cand = max(remotes, key=lambda sp: talk[sp])
         m[cand] = "Candidate"
-        n = sum(1 for sp in talk if sp.startswith("Interviewer"))      # interviewers on the mic
+        # continue after the highest-numbered interviewer on the mic ("Interviewer" = 1). At least
+        # 1: whoever runs this Mac is Interviewer 1 even before they've said anything
+        nums = [int(m.group(1)) if m.group(1) else 1
+                for m in (re.match(r"Interviewer(?: (\d+))?$", sp) for sp in talk) if m]
+        n = max([1] + nums)
         for sp in sorted((r for r in remotes if r != cand), key=lambda sp: first[sp]):
             n += 1
             m[sp] = f"Interviewer {n}"
@@ -592,7 +598,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/start":
             data = self._body()
             try:
-                info = start_pipeline(data.get("source", "sample"), data.get("device"), data.get("names"))
+                info = start_pipeline(data.get("source", "sample"), data.get("device"), data.get("names"),
+                                      data.get("split"))
                 return self._json({"ok": True, **info})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 500)
