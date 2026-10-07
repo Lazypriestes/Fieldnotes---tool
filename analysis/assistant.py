@@ -142,7 +142,7 @@ def ollama_matches(model, plan_text, speaker, text):
     with LOCK:
         ids = set(PLAN["by_id"].keys())
         interviewer = PLAN["interviewer"]
-    is_interviewer = speaker == interviewer
+    is_interviewer = speaker.startswith(interviewer)       # "Interviewer 2" asks questions too
     for m in raw:
         if not isinstance(m, dict):
             continue
@@ -450,6 +450,34 @@ def list_sessions():
     return out
 
 
+# ---- who's who: display names for the speakers of the current interview -------------------
+# The pipeline labels people by where they were heard: Interviewer (mic), Interviewer 2 (a
+# second voice on the mic), Candidate (the call), or Remote 1 / Remote 2 when the call side is
+# split. Remote voices get roles here: the one who talks the MOST is the candidate, the others
+# are interviewers. Anything the user sets in the app (/api/speakers) wins.
+SPEAKER_OVERRIDES = {"session": None, "map": {}}
+
+
+def speaker_map(conn, session):
+    rows = conn.execute("SELECT speaker, SUM(t_end - t_start), MIN(id) FROM segments "
+                        "WHERE session_id=? GROUP BY speaker", (session,)).fetchall()
+    talk = {r[0]: r[1] or 0.0 for r in rows}
+    first = {r[0]: r[2] for r in rows}
+    m = {sp: sp for sp in talk}
+    remotes = [sp for sp in talk if sp.startswith("Remote ")]
+    if remotes:
+        cand = max(remotes, key=lambda sp: talk[sp])
+        m[cand] = "Candidate"
+        n = sum(1 for sp in talk if sp.startswith("Interviewer"))      # interviewers on the mic
+        for sp in sorted((r for r in remotes if r != cand), key=lambda sp: first[sp]):
+            n += 1
+            m[sp] = f"Interviewer {n}"
+    with LOCK:
+        if SPEAKER_OVERRIDES["session"] == session:
+            m.update(SPEAKER_OVERRIDES["map"])
+    return m, talk
+
+
 def read_only(db):
     return sqlite3.connect(f"file:{db}?mode=ro", uri=True)
 
@@ -486,9 +514,11 @@ def worker(db, model):
                 "SELECT id, speaker, text FROM segments WHERE session_id=? AND id>? ORDER BY id",
                 (session, after),
             ).fetchall()
+            names, _ = speaker_map(conn, session) if rows else ({}, {})
         finally:
             conn.close()
-        for seg_id, speaker, text in rows:
+        for seg_id, raw, text in rows:
+            speaker = names.get(raw, raw)
             try:
                 matches = ollama_matches(model, plan_text, speaker, text)
             except Exception as e:
@@ -587,6 +617,28 @@ class Handler(BaseHTTPRequestHandler):
             out = [ollama_anonymize(self.model, t) if isinstance(t, str) else None
                    for t in texts[:12]]
             return self._json({"ok": True, "texts": out})
+        if url.path == "/api/speakers":
+            # {raw: "Remote 2", name: "Candidate"} -> override for the current interview
+            data = self._body()
+            raw, name = str(data.get("raw") or ""), str(data.get("name") or "").strip()[:40]
+            try:
+                conn = read_only(self.db_path)
+                try:
+                    session = latest_session(conn)
+                finally:
+                    conn.close()
+            except sqlite3.Error:
+                session = None
+            if not raw or not session:
+                return self._json({"ok": False, "error": "no interview / speaker"}, 400)
+            with LOCK:
+                if SPEAKER_OVERRIDES["session"] != session:
+                    SPEAKER_OVERRIDES.update(session=session, map={})
+                if name:
+                    SPEAKER_OVERRIDES["map"][raw] = name
+                else:
+                    SPEAKER_OVERRIDES["map"].pop(raw, None)
+            return self._json({"ok": True})
         if url.path == "/api/session/save":
             data = self._body()
             try:
@@ -665,11 +717,13 @@ class Handler(BaseHTTPRequestHandler):
                 rows = conn.execute(
                     "SELECT id, t_start, t_end, speaker, text FROM segments"
                     " WHERE session_id=? AND id>? ORDER BY id", (session, after)).fetchall()
+                names, talk = speaker_map(conn, session)
             finally:
                 conn.close()
-            return self._json({"session": session, "waiting": False, "segments": [
-                {"id": r[0], "t_start": r[1], "t_end": r[2], "speaker": r[3], "text": r[4]}
-                for r in rows]})
+            return self._json({"session": session, "waiting": False,
+                "speakers": [{"raw": raw, "name": names[raw], "seconds": round(talk[raw], 1)} for raw in talk],
+                "segments": [{"id": r[0], "t_start": r[1], "t_end": r[2], "speaker": names.get(r[3], r[3]),
+                              "raw": r[3], "text": r[4]} for r in rows]})
 
         if url.path == "/api/coverage":
             after = self._after(url)

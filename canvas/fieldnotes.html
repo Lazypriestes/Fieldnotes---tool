@@ -1279,7 +1279,21 @@
     var start = e.tStart != null ? e.tStart * 1000 : (i ? sess.cum[i - 1] : 0);
     return [start, end];
   }
-  function mmIsInterviewer(e) { return !!e.a || e.w === I || e.w === LIVE.interviewer; }
+  function mmIsInterviewer(e) { return !!e.a || e.w === I || isInterviewerName(e.w); }
+  // "Interviewer", "Interviewer 2", "Interviewer 2 (Anna)" are all interviewers
+  function isInterviewerName(w) { return typeof w === 'string' && w.indexOf(LIVE.interviewer) === 0; }
+  // The server can re-decide who's who as the interview goes on (the remote voice that talks
+  // most is the candidate) or when you rename someone; relabel lines already on screen.
+  function applySpeakerNames(list) {
+    var map = {}, changed = false;
+    list.forEach(function (sp) { map[sp.raw] = sp.name; });
+    LIVE.speakers = list;
+    STEPS.forEach(function (e) {
+      var nm = e.raw && map[e.raw];
+      if (nm && nm !== e.w) { e.w = nm; e.a = isInterviewerName(nm); changed = true; }
+    });
+    if (changed && liveIdx >= 0) rebuildTo(reviewing ? viewIdx : liveIdx, false);
+  }
   // readable question label: follow-ups are just '↳', so name them by their parent ('Q4.2 ↳')
   function mmQLabel(q) {
     if (!q) return '';
@@ -2772,6 +2786,7 @@
       if (d.session && d.session !== LIVE.session) {           // fresh session appeared -> follow it, clear the stale view
         LIVE.session = d.session; resetLiveSession(); return;   // next poll fetches from the top
       }
+      if (d.speakers) applySpeakerNames(d.speakers);
       d.segments.forEach(applySegment);
       if (d.segments.length) LIVE.lastSeg = d.segments[d.segments.length - 1].id;
     }).catch(function () {
@@ -2818,8 +2833,8 @@
 
   function applySegment(seg) {
     if (LIVE.byId[seg.id] != null) return;
-    var isInt = seg.speaker === LIVE.interviewer;
-    var step = { w: seg.speaker, t: seg.text, a: isInt, tStart: seg.t_start, tEnd: seg.t_end,
+    var isInt = isInterviewerName(seg.speaker);
+    var step = { w: seg.speaker, raw: seg.raw || seg.speaker, t: seg.text, a: isInt, tStart: seg.t_start, tEnd: seg.t_end,
                  seg_id: seg.id, mark: [], notes: [] };
     STEPS.push(step);
     var i = STEPS.length - 1;
@@ -3577,7 +3592,7 @@
       session_id: LIVE.session || null,
       tree: { name: f.name || 'Interview', data: snap(), notes: pageNotes.map(serializeNote) },
       steps: STEPS.slice(0, n).map(function (e) {
-        return { w: e.w, t: e.t, a: !!e.a, tStart: e.tStart, tEnd: e.tEnd, seg_id: e.seg_id,
+        return { w: e.w, raw: e.raw || null, t: e.t, a: !!e.a, tStart: e.tStart, tEnd: e.tEnd, seg_id: e.seg_id,
                  mark: e.mark || [], notes: e.notes || [], anno: e.anno || [], cur: e.cur || null };
       }),
       clips: redSpans.map(function (c) { return { startMs: c.startMs, endMs: c.endMs, reaction: c.reaction || 0, notes: (c.notes || []).slice() }; }),
