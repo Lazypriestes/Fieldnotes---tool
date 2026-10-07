@@ -13,22 +13,35 @@ raw PCM · 16 kHz · mono · float32 · little-endian   →  stdout
 Anything that emits this works: this `systemaudio` helper, an `ffmpeg` command, a future
 Core-Audio-tap tool, etc.
 
-## systemaudio (ScreenCaptureKit)
+## systemaudio (Core Audio process tap)
 Captures macOS **system audio** — or one app's — with **no virtual driver and no output
 rerouting**. Your default output and the volume keys are untouched (unlike BlackHole).
+Uses the `AudioHardwareCreateProcessTap` API (macOS **14.4+**). An earlier ScreenCaptureKit
+version is gone: its audio tap returned no buffers on macOS 26.
+
+`build.sh` produces **SystemAudio.app** (a real bundle with a stable id) and symlinks it as
+`./systemaudio`, so any permission grant is tied to the bundle and survives rebuilds.
 
 ```bash
-./build.sh                              # compile -> ./systemaudio   (needs swiftc)
-./systemaudio                           # all system audio (excludes our own output)
-./systemaudio --app "Microsoft Teams"   # only that app's audio (best effort)
+./build.sh                              # compile -> SystemAudio.app (+ ./systemaudio symlink); needs swiftc
+./systemaudio                           # all system audio
+./systemaudio --app "Microsoft Teams"   # only that app's audio (matches on bundle id)
 ./systemaudio | ../.venv/bin/python ../pipeline.py --reset --source stdin --names "Interviewer,Candidate"
+./systemaudio --with-mic | ../.venv/bin/python ../pipeline.py --reset --source stdin --channels 2   # a call
 ```
 
-**Permission:** first run asks for **Screen Recording** for your terminal
-(System Settings › Privacy & Security › Screen Recording). One-time, far less invasive
-than BlackHole's device rerouting. Until granted, it logs the reason to stderr and exits.
+**Permission:** if macOS prompts, allow **audio recording** for *Fieldnotes System Audio*
+(System Settings › Privacy & Security). No Screen-Recording grant and no loopback device —
+far less invasive than BlackHole. On failure it logs the reason to stderr and exits.
 
 Logs go to **stderr**; stdout is data only.
+
+## Call mode (`--with-mic`)
+Emits **2 channels** — `[microphone, system]` interleaved, 16 kHz float32 — instead of mono.
+`pipeline.py --channels 2` then takes the speaker from the channel (mic = you, system =
+them) and skips the diarizer entirely. Whenever the system channel is active it wins, so
+speaker echo picked up by the mic never counts as you. Needs Microphone access for
+*Fieldnotes System Audio*.
 
 ## In the app
 `analysis/assistant.py` launches `systemaudio | pipeline --source stdin` when the ◉ source

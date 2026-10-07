@@ -1,5 +1,6 @@
-# Diarization: NVIDIA Sortformer via MLX (Apple Silicon GPU, no CUDA)
-mlx-audio>=0.3
+# Diarization: NVIDIA Nemotron-3-Diarization (default, 8 speakers) or Sortformer v2.1,
+# both via MLX on the Apple Silicon GPU, no CUDA. 0.5.8 adds nemotron_diarization.
+mlx-audio>=0.5.8
 # Transcription: CrisperWhisper (verbatim fine-tune) on the Apple GPU via PyTorch/MPS
 crisperwhisper[transformers]>=2.0
 ctranslate2                       # not used for inference, but crisperwhisper imports it
@@ -16,3 +17,9 @@ numpy>=2.0
 
 # Transcription: NVIDIA Parakeet on MLX (Apple GPU, no PyTorch model) — default engine
 parakeet-mlx>=0.3
+
+# Export window: Word (.docx) and PDF documents, generated locally by analysis/export.py
+python-docx>=1.1
+fpdf2>=2.8
+# Import window: read question trees out of PDFs (Word via python-docx; images via macOS Vision)
+pypdf>=5.0

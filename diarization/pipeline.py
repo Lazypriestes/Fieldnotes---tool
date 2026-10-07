@@ -1,12 +1,13 @@
 """Live speech-to-text + speaker separation, writing to a local SQLite file.
 
-Diarization is done by NVIDIA Sortformer (streaming, MLX / Apple-Silicon GPU): one
-neural net does voice-activity, segmentation and speaker assignment, and it handles
-overlapping speech. Whisper still provides the words.
+Diarization is done by NVIDIA Nemotron-3-Diarization (default; up to 8 speakers) or
+streaming Sortformer v2.1 (--diarizer sortformer; up to 4), both on MLX / the
+Apple-Silicon GPU: one neural net does voice-activity, segmentation and speaker
+assignment, and it handles overlapping speech. Parakeet provides the words.
 
-    audio (device or file)
+    audio (device, stdin or file)
         -> 1s chunks
-        -> Sortformer stream   (who spoke, when)         [GPU]
+        -> diarizer stream     (who spoke, when)         [GPU]
         -> merge into turns
         -> Whisper transcribe   (what they said)         [CPU]
         -> SQLite (WAL; readable live by watch.py / server.py / an LLM)
@@ -39,7 +40,13 @@ SAMPLE_RATE = 16000
 BLOCK = 1600                 # 100 ms device blocks
 CHUNK_SEC = 1.0              # Sortformer needs ~1 s chunks; smaller yields nothing
 CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_SEC)
-SORTFORMER_MODEL = "mlx-community/diar_streaming_sortformer_4spk-v2.1-fp16"
+# Diarizer models (both MLX, both loaded via mlx_audio.vad.load):
+#   nemotron   — NVIDIA Nemotron-3-Diarization: up to 8 speakers, latency presets (default)
+#   sortformer — streaming Sortformer v2.1: up to 4 speakers (previous default; fallback)
+DIARIZERS = {
+    "nemotron": "mlx-community/Nemotron-3-Diarization",
+    "sortformer": "mlx-community/diar_streaming_sortformer_4spk-v2.1-fp16",
+}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -278,14 +285,16 @@ def device_source(device):
             time.sleep(0.1)
 
 
-def stdin_source():
-    """Read raw PCM from stdin — the fixed capture contract: 16 kHz, mono, float32,
-    little-endian. Any external capturer that emits this (the SCK helper in
-    capture/, ffmpeg, etc.) plugs in here without the pipeline knowing how audio
-    was grabbed. Decouples the capture *method* from the pipeline."""
+def stdin_source(channels=1):
+    """Read raw PCM from stdin — the fixed capture contract: 16 kHz, float32,
+    little-endian; mono, or with --channels 2 interleaved [microphone, system] frames
+    (a call: you on ch0, the other side on ch1). Any external capturer that emits this
+    (capture/systemaudio, ffmpeg, etc.) plugs in here without the pipeline knowing how
+    audio was grabbed. Decouples the capture *method* from the pipeline."""
     stream = sys.stdin.buffer
-    nbytes = BLOCK * 4                       # float32 = 4 bytes/sample
-    print("[capture] reading PCM from stdin (16 kHz mono f32)   (ctrl-c to stop)", flush=True)
+    nbytes = BLOCK * 4 * channels            # float32 = 4 bytes/sample
+    layout = "mono" if channels == 1 else "2 ch: mic + system"
+    print(f"[capture] reading PCM from stdin (16 kHz {layout} f32)   (ctrl-c to stop)", flush=True)
     while not stop.is_set():
         buf = b""
         while len(buf) < nbytes:             # pipes can short-read; fill a full block
@@ -297,7 +306,8 @@ def stdin_source():
             break
         if len(buf) < nbytes:
             buf += b"\x00" * (nbytes - len(buf))
-        audio_q.put(np.frombuffer(buf, dtype="<f4").astype(np.float32).copy())
+        block = np.frombuffer(buf, dtype="<f4").astype(np.float32)
+        audio_q.put(block.reshape(-1, channels).copy() if channels > 1 else block.copy())
 
 
 def run_source(fn, *args):
@@ -353,7 +363,8 @@ class RollingBuffer:
 PAD = 0.3   # seconds of audio kept around a transcription window
 
 
-def diarize_worker(diarizer, sf_threshold, max_turn, silence_finalize, min_turn):
+def diarize_worker(diarizer, sf_threshold, max_turn, silence_finalize, min_turn,
+                   stream_kwargs=None, frame_sec=None):
     """Run Sortformer, keep a speaker timeline, and dispatch transcription windows
     at silence breaks. We deliberately transcribe on *silence* boundaries, not on
     speaker-change boundaries: cutting audio where a speaker changes clips words and
@@ -382,6 +393,7 @@ def diarize_worker(diarizer, sf_threshold, max_turn, silence_finalize, min_turn)
     transcribe_from = 0.0  # dispatched up to here
     last_end = 0.0         # newest speech offset seen
     cur_spk = None         # speaker of the most recent segment
+    frontier = 0.0         # audio time the diarizer has fully processed
 
     def dispatch(t0, t1):
         if t1 - t0 < 0.2:
@@ -399,9 +411,9 @@ def diarize_worker(diarizer, sf_threshold, max_turn, silence_finalize, min_turn)
             turn_q.put((audio_start, audio, win_spk, t0, t1))
 
     for out in diarizer.generate_stream(feeder(), sample_rate=SAMPLE_RATE,
-                                        chunk_duration=CHUNK_SEC,
                                         threshold=sf_threshold,
-                                        min_duration=0.2, merge_gap=0.0):
+                                        min_duration=0.2, merge_gap=0.0,
+                                        **(stream_kwargs or {})):
         if stop.is_set():
             break
         for seg in out.segments:
@@ -420,7 +432,15 @@ def diarize_worker(diarizer, sf_threshold, max_turn, silence_finalize, min_turn)
                 cur_spk = seg.speaker
             timeline.append((seg.start, seg.end, seg.speaker))
             last_end = max(last_end, seg.end)
-        now = buffer.now()
+        # Nemotron emits ~1 s behind the live audio (chunk + lookahead), so measuring
+        # silence against `buffer.now()` makes every chunk look like a pause and chops
+        # turns into fragments. For it, measure against how far it has PROCESSED: each
+        # result's speaker_probs are contiguous frames of `frame_sec` from t=0.
+        if frame_sec:
+            frontier += out.speaker_probs.shape[0] * frame_sec
+            now = frontier
+        else:
+            now = buffer.now()
         # secondary triggers: a long monologue (max_turn) or a trailing utterance
         # before a real silence (silence_finalize)
         if last_end > transcribe_from and (now - last_end > silence_finalize
@@ -434,14 +454,141 @@ def diarize_worker(diarizer, sf_threshold, max_turn, silence_finalize, min_turn)
 
 
 # --------------------------------------------------------------------------
+# call mode: speaker = channel (mic = you, system = them) — no diarization model
+# --------------------------------------------------------------------------
+
+def channel_worker(max_turn, silence_finalize, min_turn, mic_delay=0.2):
+    """2-channel input [mic, system] -> speaker turns. Who spoke comes from the channel,
+    with an ECHO MODEL so sound from your speakers reaching the mic never counts as you:
+
+      * system channel: a clean digital signal, so any real level means it is sounding
+        (no learned "silence" level - that broke when a video was already playing at start)
+      * echo gain g: how loud the speakers are in your mic relative to the system channel,
+        learned continuously (~0.4 on laptop speakers, ~0 with headphones)
+      * you are speaking only when the mic is clearly LOUDER than the echo the recent
+        system audio could produce - which also lets you talk over the other side
+      * every "you" turn is checked once more: if the mic's loudness rises and falls in step
+        with the system channel, it is echo and is dropped
+
+    A switch of speaker needs ~0.3 s of the new voice (hysteresis). Each finished turn is
+    transcribed from its own clean channel.
+
+    mic_delay: the system-audio tap reaches us ~0.2 s later than the microphone (measured:
+    speaker echo hits the mic 209 ms before the same sound arrives on the system channel);
+    the mic is delayed by that much so the two channels line up."""
+    from collections import deque
+    bufs = [RollingBuffer(), RollingBuffer()]
+    lag_blocks = max(0, int(round(mic_delay * SAMPLE_RATE / BLOCK)))
+    mic_fifo = deque([np.zeros(BLOCK, np.float32)] * lag_blocks)
+    BLOCK_SEC = BLOCK / SAMPLE_RATE
+    SYS_ON = 0.004                       # system channel is sounding
+    MIC_MIN = 0.006                      # quietest mic level that can be a voice
+    mic_floor = 0.002                    # mic room-noise level (adapts)
+    echo = {"g": 0.6, "num": 0.0, "den": 0.0, "n": 0}   # echo gain mic/system: cautious start, then learned
+    sys_hist = deque(maxlen=7)           # last 0.7 s of system levels: echo tail + misalignment
+    cur = None                           # speaker of the current turn (0 = mic, 1 = system)
+    turn_from = turn_last = 0.0          # current turn: start / last voiced moment
+    cand, cand_since = None, 0.0         # a would-be new speaker and since when
+    t = 0.0
+    dropped = [0]
+
+    def envelope(x, frame=320):          # 20 ms loudness frames
+        n = len(x) // frame
+        return np.sqrt(np.mean(x[: n * frame].reshape(n, frame) ** 2, axis=1)) if n else np.empty(0)
+
+    def is_echo(t0, t1):
+        """Does the mic's loudness over this turn track the system channel (within +-0.4 s)?"""
+        em = envelope(bufs[0].slice(t0, t1))
+        es = envelope(bufs[1].slice(t0 - 0.4, t1 + 0.4))
+        if len(em) < 10 or len(es) < len(em) or es.max() < SYS_ON or em.std() == 0:
+            return False
+        best = 0.0
+        for lag in range(0, len(es) - len(em) + 1):
+            w = es[lag: lag + len(em)]
+            if w.std() > 0:
+                best = max(best, float(np.corrcoef(em, w)[0, 1]))
+        return best > 0.6
+
+    def dispatch(spk, t0, t1):
+        if t1 - t0 < 0.25:
+            return
+        if spk == 0 and is_echo(t0, t1):
+            dropped[0] += 1
+            print(f"[call] dropped {t1 - t0:.1f}s of speaker echo on the mic", flush=True)
+            return
+        a0 = max(t0 - PAD, bufs[spk].start)
+        audio = bufs[spk].slice(a0, t1 + PAD)
+        if len(audio):
+            turn_q.put((a0, audio, spk, t0, t1))
+
+    while True:
+        block = audio_q.get()
+        if block is None or stop.is_set():
+            break
+        mic_fifo.append(block[:, 0].copy())
+        mic, sys_ = mic_fifo.popleft(), block[:, 1]
+        if len(mic) != len(sys_):              # a short last block
+            mic = np.resize(mic, len(sys_))
+        bufs[0].append(mic); bufs[1].append(sys_)
+        rm = float(np.sqrt(np.mean(mic ** 2)))
+        rs = float(np.sqrt(np.mean(sys_ ** 2)))
+        sys_hist.append(rs)
+        recent = max(sys_hist)
+        mic_floor = rm if rm < mic_floor else mic_floor * 1.005 + 1e-7
+        voice = rm > max(4.0 * mic_floor, MIC_MIN)
+        you = voice and rm > 2.5 * echo["g"] * recent + 0.004     # louder than echo can explain
+        them = rs > SYS_ON
+        if rs > 0.02 and not you:
+            # learn the echo gain as a ratio of AVERAGE levels (mic vs system on the same,
+            # aligned blocks) - dividing by the recent PEAK underestimated it 2-3x and let
+            # echo through. Blocks where the mic is far above the current estimate are
+            # skipped: that's you talking over them, not echo.
+            if echo["n"] < 10 or rm < 2.0 * echo["g"] * rs + 0.01:
+                echo["num"] = 0.97 * echo["num"] + 0.03 * rm
+                echo["den"] = 0.97 * echo["den"] + 0.03 * rs
+                echo["n"] += 1
+                if echo["n"] >= 10:
+                    echo["g"] = min(1.5, max(0.02, echo["num"] / echo["den"]))
+        spk = 0 if you else 1 if them else None
+        t_end = t + BLOCK_SEC
+        if spk is not None:
+            if cur is None:
+                cur, turn_from, turn_last, cand = spk, t, t_end, None
+            elif spk == cur:
+                turn_last, cand = t_end, None
+            else:
+                if cand != spk:
+                    cand, cand_since = spk, t
+                if t_end - cand_since >= 0.3:
+                    if turn_last - turn_from >= min_turn:      # a real turn ended: hand over
+                        dispatch(cur, turn_from, turn_last)
+                        turn_from = cand_since
+                    # else: the current "turn" was only a blip (often speaker echo reaching
+                    # the mic first) - relabel it to the new speaker rather than blocking them
+                    cur, turn_last, cand = spk, t_end, None
+        if cur is not None and (t_end - turn_last > silence_finalize or turn_last - turn_from >= max_turn):
+            dispatch(cur, turn_from, turn_last)
+            cur, cand = None, None
+        t = t_end
+    if cur is not None:
+        dispatch(cur, turn_from, turn_last)
+    turn_q.put(None)
+
+
+# --------------------------------------------------------------------------
 # transcribe finished turns + persist
 # --------------------------------------------------------------------------
 
-def asr_worker(transcriber, store, session_id, names):
+def asr_worker(transcriber, store, session_id, names, fixed_names=False):
     label_map, order = {}, []
-    emitted_until = 0.0    # newest word time already stored, for cross-window dedup
+    # newest word time already stored, for cross-window dedup. One timeline normally; in
+    # call mode one PER CHANNEL - the two channels are separate recordings, so a word on
+    # one must never be dropped as a "repeat" of the other speaker's last word.
+    emitted_until = {}
 
     def name_for(spk_idx):
+        if fixed_names:      # call mode: speaker index IS the channel -> names[0] = mic, names[1] = system
+            return names[spk_idx] if spk_idx < len(names) else f"S{spk_idx + 1}"
         raw = f"S{spk_idx + 1}"
         if raw not in label_map:
             order.append(raw)
@@ -463,6 +610,7 @@ def asr_worker(transcriber, store, session_id, names):
         if item is None:
             break
         audio_start, samples, win_spk, win_t0, win_t1 = item
+        key = win_spk if fixed_names else 0
 
         raw = transcriber.words(samples)
         if not raw:                       # None (timed out) or [] (empty/error)
@@ -476,10 +624,10 @@ def asr_worker(transcriber, store, session_id, names):
         keep = [w for w in words
                 if (w[0] + w[1]) / 2 >= win_t0 - 0.35
                 and (w[0] + w[1]) / 2 <= win_t1 + 0.05
-                and (w[0] + w[1]) / 2 > emitted_until]
+                and (w[0] + w[1]) / 2 > emitted_until.get(key, 0.0)]
         if not keep:
             continue
-        emitted_until = max(w[1] for w in keep)
+        emitted_until[key] = max(w[1] for w in keep)
         emit(win_spk, keep[0][0], keep[-1][1], "".join(w[2] for w in keep))
 
 
@@ -522,7 +670,18 @@ def main():
     p.add_argument("--min-turn", type=float, default=0.6,
                    help="ignore speaker changes until the current turn is this long "
                         "(hysteresis against flicker/crosstalk)")
-    # accepted for backward compatibility with older run.sh; Sortformer caps at 4.
+    p.add_argument("--channels", type=int, choices=[1, 2], default=1,
+                   help="stdin only: 2 = a call captured as [mic, system] (capture/systemaudio "
+                        "--with-mic). Speakers then come from the channel; no diarizer is loaded.")
+    p.add_argument("--mic-delay", type=float, default=0.2,
+                   help="call mode: delay the mic channel by this many seconds to line it up with "
+                        "the (slower) system-audio channel")
+    p.add_argument("--diarizer", choices=sorted(DIARIZERS), default="nemotron",
+                   help="nemotron (8 speakers, default) or sortformer (4 speakers, previous)")
+    p.add_argument("--latency", choices=["ultra_low", "very_low", "low"], default="low",
+                   help="Nemotron streaming preset: 0.32 / 0.64 / 1.04 s input latency "
+                        "(lower = snappier, slightly less accurate)")
+    # accepted for backward compatibility with older run.sh; the diarizer sets the cap.
     p.add_argument("--max-speakers", type=int, default=4, help=argparse.SUPPRESS)
     args = p.parse_args()
 
@@ -554,8 +713,22 @@ def main():
               f"— first run downloads the model, then warms up...")
         transcriber = CrisperTranscriber(language=args.language, mode=args.mode,
                                          cw_model=args.cw_model, timeout=args.asr_timeout)
-    print("[init] loading Sortformer (first run downloads ~230 MB)...")
-    diarizer = load_diarizer(SORTFORMER_MODEL)
+    call_mode = args.source == "stdin" and args.channels == 2
+    diarizer, stream_kwargs, frame_sec = None, {}, None
+    if call_mode:
+        print("[init] call mode: you = microphone channel, them = system-audio channel "
+              "(no diarization model needed)")
+    elif args.diarizer == "nemotron":
+        print(f"[init] loading Nemotron-3-Diarization ({args.latency} latency; "
+              f"first run downloads ~200 MB)...")
+        diarizer = load_diarizer(DIARIZERS["nemotron"])
+        # The model ships on the 'offline' preset (~27 s chunks) — fatal for live use.
+        diarizer.set_streaming_config(args.latency)
+        stream_kwargs, frame_sec = {}, 0.01      # speaker_probs at 10 ms resolution
+    else:
+        print("[init] loading Sortformer (first run downloads ~230 MB)...")
+        diarizer = load_diarizer(DIARIZERS["sortformer"])
+        stream_kwargs, frame_sec = {"chunk_duration": CHUNK_SEC}, None
 
     store = Store(args.db)
     src = args.path if args.source == "file" else "stdin" if args.source == "stdin" else str(args.device)
@@ -563,20 +736,27 @@ def main():
     print(f"[init] session {session_id} -> {args.db}\n")
 
     START_WALL = time.time()
+    if call_mode:
+        names = names or ["Interviewer", "Candidate"]
+        speaker_thread = threading.Thread(target=channel_worker,
+                                          args=(args.max_turn, args.silence_finalize, args.min_turn, args.mic_delay),
+                                          daemon=True)
+    else:
+        speaker_thread = threading.Thread(target=diarize_worker,
+                                          args=(diarizer, args.sf_threshold, args.max_turn,
+                                                args.silence_finalize, args.min_turn, stream_kwargs, frame_sec),
+                                          daemon=True)
     threads = [
-        threading.Thread(target=diarize_worker,
-                         args=(diarizer, args.sf_threshold, args.max_turn,
-                               args.silence_finalize, args.min_turn),
-                         daemon=True),
+        speaker_thread,
         threading.Thread(target=asr_worker,
-                         args=(transcriber, store, session_id, names),
+                         args=(transcriber, store, session_id, names, call_mode),
                          daemon=True),
     ]
     if args.source == "file":
         threads.append(threading.Thread(
             target=run_source, args=(file_source, args.path, not args.fast), daemon=True))
     elif args.source == "stdin":
-        threads.append(threading.Thread(target=run_source, args=(stdin_source,), daemon=True))
+        threads.append(threading.Thread(target=run_source, args=(stdin_source, args.channels), daemon=True))
     else:
         threads.append(threading.Thread(
             target=run_source, args=(device_source, args.device), daemon=True))

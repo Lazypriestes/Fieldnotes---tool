@@ -72,8 +72,11 @@ if [ "${FN_SKIP_WARMUP:-}" = "1" ]; then
   warn "skipping model warm-up (FN_SKIP_WARMUP=1) — they download on first live run"
 else
   say "warming up diarizer + Whisper on the sample (~1.7 GB first time — one-time)"
-  if diarization/.venv/bin/python diarization/pipeline.py --reset --fast --names "Interviewer,Candidate" >/tmp/fn_warmup.log 2>&1; then
-    ok "models cached; pipeline verified end-to-end"
+  # Sample source runs Sortformer (its synthetic voices are too alike for Nemotron);
+  # live sources run Nemotron-3-Diarization — cache both.
+  if diarization/.venv/bin/python diarization/pipeline.py --reset --fast --diarizer sortformer --names "Interviewer,Candidate" >/tmp/fn_warmup.log 2>&1 \
+     && diarization/.venv/bin/python -c "from mlx_audio.vad import load; load('mlx-community/Nemotron-3-Diarization')" >>/tmp/fn_warmup.log 2>&1; then
+    ok "models cached (Parakeet, Sortformer, Nemotron-3-Diarization); pipeline verified end-to-end"
   else
     warn "warm-up failed (see /tmp/fn_warmup.log) — models will download on first live run"
   fi
