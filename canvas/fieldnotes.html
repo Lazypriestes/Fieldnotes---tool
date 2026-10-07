@@ -396,6 +396,12 @@
   .xbtn{font:inherit;font-size:12.5px;padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
   .xbtn.primary{background:var(--ink);border-color:var(--ink);color:var(--surface)}
   .xbtn:disabled{opacity:.5;cursor:wait}
+  /* off the record */
+  .tl-off{position:absolute;border-radius:3px;pointer-events:auto;z-index:1;opacity:.85;
+    background:repeating-linear-gradient(135deg,#B9B29A 0 4px,#E7E2D2 4px 8px)}
+  .caps.offrec .dot{background:var(--faint)!important;animation:none!important}
+  .caps.offrec .rec{color:var(--muted)}
+  #pauseBtn.on{color:var(--red)}
   /* speakers (who is who) */
   .caps .spkbtn{font:inherit;font-size:11px;border:1px solid var(--line);background:transparent;color:var(--muted);
     border-radius:10px;padding:1px 8px;margin-right:8px;cursor:pointer}
@@ -917,6 +923,7 @@
           <div><span>Add note</span><kbd>N</kbd></div>
           <div><span>Add question</span><kbd>Q</kbd></div>
           <div><span>Record clip · from 10s back until release</span><kbd>R</kbd></div>
+          <div><span>Off the record (live) · nothing transcribed</span><kbd>⏸</kbd></div>
           <div><span>Rate a clip</span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>N</kbd></div>
         </div>
         <div class="help-sec"><h4>Notes</h4>
@@ -2777,6 +2784,9 @@
   function enterLiveView(label) {
     live = true; liveReal = true; LIVE.on = true; LIVE.restored = false; LIVE.attached = false;
     LIVE.covSession = null;
+    LIVE.off = false; LIVE.offSpans = []; if (LIVE.offTimer) { clearInterval(LIVE.offTimer); LIVE.offTimer = null; }
+    pauseBtn.innerHTML = ICON_PAUSE; pauseBtn.classList.remove('on');
+    pauseBtn.title = 'Off the record — stop transcribing until you resume';
     STEPS = LIVE.steps = []; LIVE.byId = {}; LIVE.lastSeg = 0; LIVE.lastCov = 0; LIVE.session = null; LIVE.staleSession = null; LIVE.fails = 0;
     TBASE = 0; notes = []; state = {};
     liveIdx = -1; viewIdx = -1; reviewing = false; tlDrag = false; userMarks = []; tlCursorX = null; hideTip();
@@ -2994,6 +3004,7 @@
   }
 
   function startLive() {
+    LIVE.offSpans = [];
     STEPS = SCRIPT; TBASE = 12; liveReal = false;      // demo mode
     live = true; step = 0; notes = []; state = {}; t0 = Date.now();
     paused = false; pauseOffset = 0;
@@ -3044,7 +3055,9 @@
     NODES.forEach(function (n) { delete n.el.dataset.s; n.el.classList.remove('cur'); n.el.classList.remove('next'); });
     legendLive.hidden = true; hint.hidden = false;
     runBtn.innerHTML = ICON_PLAY; runBtn.classList.remove('on'); runBtn.title = 'Run interview';
-    pauseBtn.hidden = true; paused = false; caps.classList.remove('paused');
+    pauseBtn.hidden = true; paused = false; caps.classList.remove('paused'); caps.classList.remove('offrec');
+    pauseBtn.innerHTML = ICON_PAUSE; pauseBtn.classList.remove('on'); pauseBtn.title = 'Pause';
+    LIVE.off = false; if (LIVE.offTimer) { clearInterval(LIVE.offTimer); LIVE.offTimer = null; }
     caps.hidden = true; caps.innerHTML = '';
     clearAnnos();
     state = {}; notes = []; clearBadges(); toasts.innerHTML = '';
@@ -3153,6 +3166,12 @@
       var a = (clamp(s.startMs, 0, recNow()) / span) * LIVE_X, b = Math.min(1, (Math.max(0, s.endMs) / span) * LIVE_X);
       s.el.style.left = (a * 100) + '%'; s.el.style.width = (Math.max(0, b - a) * 100) + '%';
       s.el.style.top = sTop; s.el.style.height = sH;
+    });
+    (LIVE.offSpans || []).forEach(function (o) {
+      var end = o.endMs != null ? o.endMs : o.pressMs + (Date.now() - o.pressedAt);
+      var a = (clamp(o.startMs, 0, recNow()) / span) * LIVE_X, b = Math.min(1, (Math.max(0, end) / span) * LIVE_X);
+      o.el.style.left = (a * 100) + '%'; o.el.style.width = (Math.max(0.004, b - a) * 100) + '%';
+      o.el.style.top = (cyRel - 6) + 'px'; o.el.style.height = '12px';
     });
     if (recSpan) { el.classList.add('recording'); $('tlLive').textContent = '● REC'; }
     else el.classList.remove('recording');
@@ -3436,7 +3455,35 @@
       if (!reviewing) timer = setTimeout(tick, tickDur);
     }
   }
-  pauseBtn.addEventListener('click', function () { setPaused(!paused); });
+  pauseBtn.addEventListener('click', function () { liveReal ? setOffRecord(!LIVE.off) : setPaused(!paused); });
+
+  /* ---------- off the record (real interviews) ----------
+     The pipeline replaces incoming audio with silence while this is on, so nothing is
+     transcribed or stored. The timeline shows the gap as a grey band. */
+  function setOffRecord(on, fromServer) {
+    if (!live || !liveReal || (LIVE.restored && !LIVE.attached) || !!on === !!LIVE.off) return;
+    LIVE.off = !!on;
+    if (!fromServer) fetch(API + '/api/pause', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ on: LIVE.off }) }).catch(function () {});
+    if (LIVE.off) {
+      var span = { startMs: recNow(), pressMs: recNow(), pressedAt: Date.now(), endMs: null, el: document.createElement('div') };
+      span.el.className = 'tl-off'; span.el.title = 'Off the record';
+      $('tlTrack').appendChild(span.el);
+      LIVE.offSpans.push(span);
+      LIVE.offTimer = setInterval(updateTL, 500);          // let the grey band grow while off
+    } else {
+      var cur = LIVE.offSpans[LIVE.offSpans.length - 1];
+      if (cur && cur.endMs == null) cur.endMs = cur.pressMs + (Date.now() - cur.pressedAt);
+      if (LIVE.offTimer) { clearInterval(LIVE.offTimer); LIVE.offTimer = null; }
+    }
+    caps.classList.toggle('offrec', LIVE.off);
+    pauseBtn.innerHTML = LIVE.off ? ICON_PLAY : ICON_PAUSE;
+    pauseBtn.title = LIVE.off ? 'Back on the record' : 'Off the record — stop transcribing until you resume';
+    pauseBtn.classList.toggle('on', LIVE.off);
+    var rec = caps.querySelector('.rec');
+    if (rec) rec.textContent = LIVE.off ? 'Off the record · nothing is transcribed' : 'Recording · live · local';
+    updateTL();
+  }
   runBtn.addEventListener('click', function () { live ? stopLive() : startLive(); });
   var liveBtn = $('liveBtn');
   if (liveBtn) liveBtn.addEventListener('click', function () { live ? stopLive() : startLiveBackend(); });
@@ -3627,6 +3674,7 @@
       }),
       clips: redSpans.map(function (c) { return { startMs: c.startMs, endMs: c.endMs, reaction: c.reaction || 0, notes: (c.notes || []).slice() }; }),
       marks: userMarks.map(function (m) { return { idx: m.idx, text: m.text, host: m.host || null, q: !!m.q }; }),
+      offRecord: (LIVE.offSpans || []).map(function (o) { return { startMs: o.startMs, endMs: o.endMs != null ? o.endMs : o.pressMs + (Date.now() - o.pressedAt) }; }),
       current: current || null, tbase: TBASE, lastSeg: LIVE.lastSeg, lastCov: LIVE.lastCov,
       duration: n ? fmtTime(TBASE + (cumEnd[n - 1] || 0) / 1000) : '00:00'
     };
@@ -3707,6 +3755,11 @@
       if (m.q) addQMark(m.idx, m.text);
       else { addUserMark(m.idx, m.text); userMarks[userMarks.length - 1].host = m.host; }
     });
+    (d.offRecord || []).forEach(function (o) {
+      var el = document.createElement('div'); el.className = 'tl-off'; el.title = 'Off the record';
+      $('tlTrack').appendChild(el);
+      LIVE.offSpans.push({ startMs: o.startMs, endMs: o.endMs, pressMs: o.startMs, pressedAt: Date.now(), el: el });
+    });
     LIVE.restored = true; LIVE.attached = !!attach; LIVE.session = d.session_id || null;
     LIVE.lastSeg = d.lastSeg || STEPS.reduce(function (a, e) { return Math.max(a, e.seg_id || 0); }, 0);
     LIVE.lastCov = d.lastCov || 0;
@@ -3718,6 +3771,9 @@
       SESS.id = d.session_id;
       LIVE.poll = setInterval(livePoll, 1000);
       SESS.timer = setInterval(function () { autosave(false); }, 10000);
+      fetch(API + '/api/status').then(function (r) { return r.json(); }).then(function (st) {
+        if (st.off_record) setOffRecord(true, true);        // still off the record on the server
+      }).catch(function () {});
     }
     syncTransport(); updateSessUI();
     return true;
@@ -3794,8 +3850,8 @@
     $('iv2Sel').hidden = src !== 'call';
     $('iv2Sel').disabled = live;                       // fixed for the length of an interview
     if (!live) $('spkPop').hidden = true;
-    runBtn.hidden = !live && src !== 'sample';
-    if (!live || liveReal) pauseBtn.hidden = true;
+    runBtn.hidden = live ? liveReal : src !== 'sample';
+    pauseBtn.hidden = !live || (LIVE.restored && !LIVE.attached);
   }
   try { var lastSrc = localStorage.getItem('fn.src'); if (lastSrc && $('srcSel').querySelector('option[value="' + lastSrc + '"]')) $('srcSel').value = lastSrc; } catch (_e) {}
   $('srcSel').addEventListener('change', function () { try { localStorage.setItem('fn.src', this.value); } catch (_e) {} syncTransport(); });

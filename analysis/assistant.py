@@ -20,6 +20,7 @@ import atexit
 import json
 import os
 import re
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -44,7 +45,7 @@ CAPTURE = os.path.join(DIAR, "capture", "systemaudio")   # optional SCK helper (
 PIPE = None                                              # pipeline Popen, or None
 CAP = None                                               # capture-helper Popen, or None
 PIPE_LOG = None
-PIPE_INFO = {"running": False, "source": None}
+PIPE_INFO = {"running": False, "source": None, "off_record": False}
 
 def _end(p):
     if p and p.poll() is None:
@@ -98,7 +99,7 @@ def start_pipeline(source, device, names, split=None):
     else:  # device (mic / BlackHole)
         PIPE = subprocess.Popen(base + ["--source", "device", "--device", device or "MacBook Pro Microphone"],
                                 cwd=DIAR, stdout=PIPE_LOG, stderr=subprocess.STDOUT)
-    PIPE_INFO.update(running=True, source=source)
+    PIPE_INFO.update(running=True, source=source, off_record=False)
     return PIPE_INFO.copy()
 
 atexit.register(stop_pipeline)
@@ -603,6 +604,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **info})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 500)
+        if url.path == "/api/pause":
+            # {on: true} = off the record (the pipeline turns incoming audio into silence)
+            on = bool(self._body().get("on"))
+            if PIPE is None or PIPE.poll() is not None:
+                return self._json({"ok": False, "error": "no interview running"}, 409)
+            os.kill(PIPE.pid, signal.SIGUSR1 if on else signal.SIGUSR2)
+            PIPE_INFO["off_record"] = on
+            return self._json({"ok": True, "off_record": on})
         if url.path == "/api/stop":
             stop_pipeline()
             return self._json({"ok": True, "running": False})
@@ -752,8 +761,9 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/status":
             running = bool(PIPE and PIPE.poll() is None)
             if not running and PIPE_INFO["running"]:
-                PIPE_INFO.update(running=False, source=None)
-            return self._json({"running": running, "source": PIPE_INFO["source"]})
+                PIPE_INFO.update(running=False, source=None, off_record=False)
+            return self._json({"running": running, "source": PIPE_INFO["source"],
+                               "off_record": running and PIPE_INFO["off_record"]})
 
         self._send(404, b"not found", "text/plain")
 

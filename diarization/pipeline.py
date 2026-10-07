@@ -18,6 +18,7 @@ Two sources:
 """
 
 import argparse
+import signal
 import re
 import os
 import queue
@@ -54,6 +55,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 audio_q = queue.Queue()      # raw 100 ms float32 blocks
 turn_q = queue.Queue()       # (t_start, t_end, speaker_idx, samples) ready to transcribe
 stop = threading.Event()
+# Off the record: while set, every incoming audio block is replaced by silence BEFORE anything
+# else sees it - nothing is diarized, transcribed or stored. Silence (not dropping blocks)
+# keeps the timeline continuous. Toggled by the server: SIGUSR1 = off the record, SIGUSR2 = back on.
+OFF_RECORD = threading.Event()
+
+
+def _offrec(block):
+    return np.zeros_like(block) if OFF_RECORD.is_set() else block
 
 
 # --------------------------------------------------------------------------
@@ -266,7 +275,7 @@ def file_source(path, realtime=True):
     for n, i in enumerate(range(0, len(data), BLOCK)):
         if stop.is_set():
             return
-        audio_q.put(data[i:i + BLOCK].copy())
+        audio_q.put(_offrec(data[i:i + BLOCK].copy()))
         if realtime:
             slack = t0 + (n + 1) * BLOCK / SAMPLE_RATE - time.time()
             if slack > 0:
@@ -277,7 +286,7 @@ def device_source(device):
     def callback(indata, frames, time_info, status):
         if status:
             print(f"[audio] {status}", file=sys.stderr)
-        audio_q.put(indata.mean(axis=1).astype(np.float32).copy())
+        audio_q.put(_offrec(indata.mean(axis=1).astype(np.float32).copy()))
 
     with sd.InputStream(device=device, channels=1, samplerate=SAMPLE_RATE,
                         blocksize=BLOCK, dtype="float32", callback=callback):
@@ -308,7 +317,7 @@ def stdin_source(channels=1):
         if len(buf) < nbytes:
             buf += b"\x00" * (nbytes - len(buf))
         block = np.frombuffer(buf, dtype="<f4").astype(np.float32)
-        audio_q.put(block.reshape(-1, channels).copy() if channels > 1 else block.copy())
+        audio_q.put(_offrec(block.reshape(-1, channels).copy() if channels > 1 else block.copy()))
 
 
 def run_source(fn, *args):
@@ -796,6 +805,12 @@ def main():
     print(f"[init] session {session_id} -> {args.db}\n")
 
     START_WALL = time.time()
+
+    def _set_offrec(on):
+        (OFF_RECORD.set if on else OFF_RECORD.clear)()
+        print("[off-record] " + ("paused - nothing is transcribed" if on else "back on the record"), flush=True)
+    signal.signal(signal.SIGUSR1, lambda *_: _set_offrec(True))
+    signal.signal(signal.SIGUSR2, lambda *_: _set_offrec(False))
     if call_mode:
         names = names or ["Interviewer", "Candidate"]
         names += ["Candidate"] * (2 - len(names))
