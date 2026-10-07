@@ -113,6 +113,11 @@
   .live .node[data-s="amber"] .edge3{background:var(--amber)}
   .live .node[data-s="green"] .edge3{background:var(--green)}
   .live .node.cur{border-color:var(--ink);box-shadow:0 0 0 3px rgba(21,24,27,.1)}
+  /* "you are here": a soft outline ripples out from the current question */
+  .live .node.cur::after{content:'';position:absolute;inset:-3px;border-radius:inherit;pointer-events:none;
+    border:2px solid var(--accent);animation:curpulse 1.9s ease-out infinite}
+  @keyframes curpulse{0%{opacity:.75;transform:scale(1)}70%{opacity:0;transform:scale(1.07)}100%{opacity:0;transform:scale(1.07)}}
+  @media (prefers-reduced-motion:reduce){.live .node.cur::after{animation:none;opacity:.5}}
   .live .node.next{border-color:var(--muted);border-style:dashed}
 
   /* node controls */
@@ -192,7 +197,7 @@
 
   .dock{position:absolute;left:12px;top:50%;transform:translateY(-50%);z-index:6;
     display:flex;flex-direction:column;gap:5px;padding:6px;
-    background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:11px;
+    background:rgba(255,255,255,.97);border:1px solid var(--line);border-radius:11px;
     box-shadow:0 12px 30px -18px rgba(21,24,27,.4)}
   .dock .dgrp{display:flex;flex-direction:column;gap:4px}
   .dock .dsep{height:1px;background:var(--hair);margin:3px 5px}
@@ -219,6 +224,86 @@
   .mindmap-scene .mm-big{display:none}
   .mindmap-scene span{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.1em;color:var(--faint)}
   .app.layer-mindmap .mindmap-scene{display:block}
+
+  /* mind map: the same question tree as pages 1-2, plus optional info beside it */
+  .app.layer-mindmap .node.qadded{box-shadow:0 0 0 2px #8B5CF6}
+  .mindmap-scene .mmchips{display:flex;align-items:center;gap:5px;pointer-events:auto}
+  .mindmap-scene .mmchips button{font:inherit;font-size:11px;border:1px solid var(--line);background:transparent;
+    color:var(--muted);border-radius:12px;padding:2px 9px;cursor:pointer}
+  .mindmap-scene .mmchips button.on{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+  /* right-hand cards are wide and short, so each one stays level with its question
+     instead of stacking down and dragging its link line after it */
+  .mmlayer .mmcard.ans,.mmlayer .mmcard.rec,.mmlayer .mmcard.note{width:480px}
+  .mmcard.ans .ma{display:flex;gap:8px;align-items:baseline}
+  .mmcard.ans .ma .mk{flex:none;width:118px}
+  .mmcard.ans{border-left:3px solid #4E9A6B}
+  .mmlink.ans{stroke:#4E9A6B;stroke-dasharray:2 4}
+  /* category summaries, left of the tree */
+  .mmcard.sum{width:300px;border-left:none;border-right:3px solid var(--ink)}
+  .mmcard.sum .ai{font-family:ui-monospace,Menlo,monospace;font-size:8.5px;letter-spacing:.08em;color:var(--faint);margin:2px 0 2px}
+  .mmcard.sum .sumtx{font-size:12.5px;line-height:1.5}
+  .mmcard.sum .srows{display:grid;gap:8px;margin-top:8px;align-items:start}
+  .mmcard .srow{padding:6px 7px;border:1px solid var(--hair);border-radius:7px;cursor:pointer}
+  .mmcard .srow:hover{border-color:var(--accent);background:rgba(43,95,217,.04)}
+  .mmcard .srow.ahead{border-left:3px solid #B08A3C}
+  .mmcard .srow .stx{font-size:11.5px;line-height:1.45}
+  .mmcard .srow .sq{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+  .mmq{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.04em;cursor:pointer;
+    border:1px solid #4E9A6B;color:#3F7F57;background:transparent;border-radius:10px;padding:1px 7px}
+  .mmq.other{border-color:#B08A3C;color:#8A6A2C}
+  .mmq:hover{background:rgba(78,154,107,.12)}
+  .mmlink.sum{stroke:var(--ink);opacity:.35;stroke-dasharray:none}
+  /* branches are hidden until their answer is hovered (.on) — keeps the map calm */
+  .mmbranch{fill:none;stroke:#4E9A6B;stroke-width:1.8;opacity:0;transition:opacity .15s}
+  .mmbranch.other{stroke:#B08A3C;stroke-dasharray:6 4}
+  .mmbranch.on{opacity:.9}
+  .mmhit{fill:none;stroke:transparent;stroke-width:12;pointer-events:none;cursor:pointer}
+  .mmhit.on{pointer-events:stroke}
+  .app.layer-mindmap .node.mmdim{opacity:.22;transition:opacity .2s}
+  .app.layer-mindmap .node.mmhl{box-shadow:0 0 0 3px rgba(78,154,107,.55)}
+  .node.mmflash{animation:mmflash 1.6s ease-out}
+  @keyframes mmflash{0%,40%{box-shadow:0 0 0 4px rgba(43,95,217,.55)}100%{box-shadow:0 0 0 0 rgba(43,95,217,0)}}
+  /* the mind map shows ONLY anonymized recording text: hide every raw-text surface */
+  .app.layer-mindmap .caps .line,
+  .app.layer-mindmap .worldnote{display:none!important}
+
+  /* mind-map cards: recordings + notes, attached to the question they relate to */
+  .mmlayer{position:absolute;top:0;left:0;z-index:5;display:none}
+  .app.layer-mindmap .mmlayer{display:block}
+  .mmcard{position:absolute;width:250px;box-sizing:border-box;background:var(--surface);
+    border:1px solid var(--line);border-radius:9px;padding:9px 11px 10px;font-size:12px;line-height:1.45;
+    color:var(--ink);box-shadow:0 12px 26px -16px rgba(21,24,27,.45)}
+  .mmcard.rec{border-left:3px solid var(--red)}
+  .mmcard.note{border-left:3px solid #8B5CF6;background:#FBF7E4}
+  :root[data-theme="dark"] .mmcard.note{background:#2A2620}
+  .mmcard .mh{display:flex;align-items:center;gap:6px;font-family:ui-monospace,Menlo,monospace;
+    font-size:9px;letter-spacing:.08em;color:var(--muted);margin-bottom:5px}
+  .mmcard .mh .sp{flex:1}
+  .mmcard .mh .rx{font-size:12px;letter-spacing:0}
+  .mmcard .ma{margin:5px 0 0;padding-top:5px;border-top:1px dashed var(--hair)}
+  .mmcard .ma:first-of-type{border-top:none;padding-top:0;margin-top:0}
+  .mmcard .mk{font-family:ui-monospace,Menlo,monospace;font-size:8.5px;letter-spacing:.07em;color:#4E9A6B}
+  .mmcard .mk.ahead{color:#B08A3C}
+  .mmcard .mnote{color:#6B5BB0;margin-top:5px}
+  .mmcard .empty{color:var(--faint);font-style:italic}
+  .mmcard .pending{color:var(--faint);font-style:italic}
+  .mmcard .open{margin-top:8px;font:inherit;font-size:11px;color:var(--accent);background:none;
+    border:1px solid var(--line);border-radius:6px;padding:3px 8px;cursor:pointer}
+  .mmcard .open:hover{border-color:var(--accent)}
+  .mmscript{position:absolute;width:330px;max-height:420px;overflow:auto;box-sizing:border-box;
+    background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--red);border-radius:9px;
+    padding:9px 12px 10px;font-size:12px;line-height:1.5;color:var(--ink);box-shadow:0 14px 30px -16px rgba(21,24,27,.5)}
+  .mmscript .sh{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.08em;color:var(--muted);
+    display:flex;align-items:center;margin-bottom:6px}
+  .mmscript .sh .sp{flex:1}
+  .mmscript .sh button{font:inherit;border:none;background:none;color:var(--muted);cursor:pointer;font-size:14px}
+  .mmscript .sl{margin:0 0 6px}
+  .mmscript .sw{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.06em;color:var(--muted);margin-right:6px}
+  .mmscript .sl.int .sw{color:var(--accent)}
+  .mmscript .sl.hit{background:rgba(78,154,107,.10);border-radius:4px;padding:2px 4px;margin-left:-4px}
+  .mmlink{fill:none;stroke-width:1.5;opacity:.7}
+  .mmlink.rec{stroke:var(--red);stroke-dasharray:5 4}
+  .mmlink.note{stroke:#8B5CF6;stroke-dasharray:3 4}
 
   .worldnote{position:absolute;width:190px;z-index:5;display:none;cursor:pointer;
     background:#FBF7E4;border:1px solid #E4D9A6;border-left:3px solid #8B5CF6;border-radius:6px;padding:6px 9px;
@@ -264,7 +349,7 @@
 
   .transport{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:7;
     display:flex;align-items:center;gap:13px;padding:7px 17px;
-    background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:22px;
+    background:rgba(255,255,255,.98);border:1px solid var(--line);border-radius:22px;
     box-shadow:0 16px 38px -18px rgba(21,24,27,.45);transition:bottom .25s ease}
   .app.live .transport{bottom:182px}
   .transport button{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
@@ -284,6 +369,45 @@
   .transport #liveBtn.on{color:var(--red);animation:pulse 1.6s infinite}
   .app.live-real .transport .primary.on{color:var(--red)}
 
+  /* export window */
+  .xmodal{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;
+    background:rgba(21,24,27,.32)}
+  .xmodal[hidden]{display:none}
+  .xcard{width:min(460px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    box-shadow:0 30px 70px -24px rgba(21,24,27,.55);padding:16px 18px 14px;color:var(--ink);font-size:13px}
+  .xhd{display:flex;align-items:center;font-size:15px;font-weight:600;margin-bottom:12px}
+  .xhd .sp,.xfoot .sp{flex:1}
+  .xclose{border:none;background:none;font-size:20px;line-height:1;color:var(--muted);cursor:pointer}
+  .xfld{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+  .xfld>span{width:66px;flex:none;font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+  .xfld input[type=text]{flex:1;font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink)}
+  .xseg{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .xseg button{font:inherit;font-size:12px;border:none;border-right:1px solid var(--line);background:transparent;color:var(--muted);padding:5px 10px;cursor:pointer}
+  .xseg button:last-child{border-right:none}
+  .xseg button.on{background:var(--accent-soft);color:var(--accent)}
+  .xseg button:disabled{opacity:.4;cursor:not-allowed}
+  .xchecks{display:flex;flex-direction:column;gap:7px;margin:4px 0 10px 76px}
+  .xchecks label{display:flex;align-items:center;gap:7px;cursor:pointer}
+  .xchecks label.off{opacity:.45}
+  .xinfo{margin:0 0 10px 76px;font-size:11.5px;color:var(--muted)}
+  .xfoot{display:flex;align-items:center;gap:8px;border-top:1px solid var(--hair);padding-top:12px}
+  .xstatus{font-size:12px;color:var(--muted)}
+  .xstatus.err{color:#B04A3A}
+  .xbtn{font:inherit;font-size:12.5px;padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
+  .xbtn.primary{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+  .xbtn:disabled{opacity:.5;cursor:wait}
+  /* import window */
+  .idrop{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;cursor:pointer;
+    border:1.5px dashed var(--line);border-radius:10px;padding:20px 14px;margin-bottom:12px;color:var(--muted)}
+  .idrop:hover,.idrop.over{border-color:var(--accent);background:var(--accent-soft)}
+  .idrop-main{font-size:13.5px;color:var(--ink)}
+  .idrop-sub{font-size:11.5px;line-height:1.5}
+  .ipreview{max-height:38vh;overflow:auto;border:1px solid var(--hair);border-radius:8px;padding:8px 10px;margin-bottom:12px;font-size:12px}
+  .ipreview .it{font-weight:600;margin:6px 0 2px}
+  .ipreview .it:first-child{margin-top:0}
+  .ipreview .iq{margin-left:12px}
+  .ipreview .if{margin-left:26px;color:var(--muted)}
+  .ipreview .info{font-size:11px;color:var(--muted);margin-bottom:6px}
   .filemenu{position:absolute;left:12px;top:52px;z-index:8}
   .filebtn{display:flex;align-items:center;gap:6px;max-width:210px;padding:5px 9px;
     background:var(--surface);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-size:12px}
@@ -365,7 +489,9 @@
   @keyframes slip{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 
   .caps{position:absolute;left:0;right:0;bottom:0;z-index:6;padding:10px 14px 9px;
-    background:rgba(255,255,255,.94);backdrop-filter:blur(8px);border-top:1px solid var(--hair);
+    /* no backdrop-filter: re-blurring a full-width strip every frame while the camera glides
+       stalls the compositor when the GPU is shared with the live ML models */
+    background:rgba(255,255,255,.98);border-top:1px solid var(--hair);
     display:flex;flex-direction:column;gap:4px}
   .caps[hidden]{display:none}
   .line{display:flex;gap:9px;align-items:baseline;line-height:1.4;animation:slip .25s ease}
@@ -563,7 +689,7 @@
         <div class="dropline" id="dropline"></div>
         <div class="annolayer" id="annolayer"><svg class="leads" id="leads"></svg></div>
       </div>
-      <div class="mindmap-scene" id="mindmapScene"><div>🧠 Mind map · your notes land here <span>EARLY</span></div></div>
+      <div class="mindmap-scene" id="mindmapScene"><div class="mmchips"><span>SHOW</span><button data-mmshow="summary">Summaries</button><button data-mmshow="answers">Answers</button><button data-mmshow="recordings">Recordings</button><button data-mmshow="notes">Notes</button><span>· NAMES ANONYMIZED</span></div></div>
 
       <div class="qnote" id="qnote"></div>
 
@@ -593,7 +719,7 @@
           </button>
           <button class="dbtn rec live-act" data-act="record" aria-label="Record clip">
             <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="currentColor"/></svg>
-            <span class="dtip">Tap 10s · hold for longer<b>R</b></span>
+            <span class="dtip">Last 10s · hold to keep recording<b>R</b></span>
           </button>
         </div>
         <div class="dsep"></div>
@@ -628,7 +754,7 @@
         <select id="srcSel" class="srcSel" title="Live audio source">
           <option value="sample">Sample</option>
           <option value="device">Microphone</option>
-          <option value="system">System audio (Teams)</option>
+          <option value="call">Call: me (mic) + them (system)</option><option value="system">System audio (Teams)</option>
         </select>
         <button id="liveBtn" title="Go live — starts diarization" aria-label="Connect live"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3.4" fill="currentColor"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".55"/></svg></button>
       </div>
@@ -649,6 +775,40 @@
           <svg class="fchev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg>
         </button>
         <div class="filelist" id="fileList" hidden></div>
+      </div>
+      <div class="xmodal" id="exportModal" hidden role="dialog" aria-modal="true" aria-labelledby="xTitleLbl">
+        <div class="xcard">
+          <div class="xhd"><span id="xTitleLbl">Export document</span><span class="sp"></span><button class="xclose" data-xclose aria-label="Close">×</button></div>
+          <label class="xfld"><span>Title</span><input id="xTitle" type="text" spellcheck="false"></label>
+          <div class="xfld"><span>Format</span>
+            <div class="xseg" data-xseg="format"><button data-v="docx" class="on">Word (.docx)</button><button data-v="pdf">PDF</button></div></div>
+          <div class="xfld"><span>Answers</span>
+            <div class="xseg" data-xseg="transcript"><button data-v="none">None</button><button data-v="annotated" class="on">Annotated answers</button><button data-v="full">Whole script</button></div></div>
+          <div class="xchecks">
+            <label><input type="checkbox" id="xQuestions" checked> Question plan, with what was covered</label>
+            <label><input type="checkbox" id="xNotes" checked> Notes (timeline, clip and canvas notes)</label>
+            <label><input type="checkbox" id="xRec" checked> Mark recorded parts (R clips)</label>
+            <label><input type="checkbox" id="xAnon" checked> Anonymize people's names → [PERSON]</label>
+          </div>
+          <div class="xinfo" id="xInfo"></div>
+          <div class="xfoot"><span class="xstatus" id="xStatus"></span><span class="sp"></span>
+            <button class="xbtn" data-xclose>Cancel</button><button class="xbtn primary" id="xGo">Generate &amp; download</button></div>
+        </div>
+      </div>
+      <div class="xmodal" id="importModal" hidden role="dialog" aria-modal="true" aria-labelledby="iTitleLbl">
+        <div class="xcard">
+          <div class="xhd"><span id="iTitleLbl">Import question tree</span><span class="sp"></span><button class="xclose" data-xclose aria-label="Close">×</button></div>
+          <label class="idrop" id="iDrop">
+            <input type="file" id="iFile" accept=".tldr,.json,.docx,.pdf,.png,.jpg,.jpeg,.heic,.heif,.webp,.gif,.tif,.tiff,.txt,.md,.csv" hidden>
+            <span class="idrop-main">Drop a file here, or click to choose</span>
+            <span class="idrop-sub">tldraw (.tldr) · Word (.docx) · PDF · picture (PNG, JPG, HEIC) · text / Markdown<br>
+              Miro: in Miro use <b>Export › Save as PDF or image</b>, then import that file</span>
+          </label>
+          <div class="ipreview" id="iPreview" hidden></div>
+          <label class="xfld" id="iNameRow" hidden><span>Name</span><input id="iName" type="text" spellcheck="false"></label>
+          <div class="xfoot"><span class="xstatus" id="iStatus"></span><span class="sp"></span>
+            <button class="xbtn" data-xclose>Cancel</button><button class="xbtn primary" id="iGo" disabled>Create tree</button></div>
+        </div>
       </div>
       <div class="toasts" id="toasts"></div>
       <div class="caps" id="caps" hidden></div>
@@ -702,7 +862,7 @@
         <div class="help-sec"><h4>Live capture</h4>
           <div><span>Add note</span><kbd>N</kbd></div>
           <div><span>Add question</span><kbd>Q</kbd></div>
-          <div><span>Record clip · hold=longer</span><kbd>R</kbd></div>
+          <div><span>Record clip · from 10s back until release</span><kbd>R</kbd></div>
           <div><span>Rate a clip</span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>N</kbd></div>
         </div>
         <div class="help-sec"><h4>Notes</h4>
@@ -1029,7 +1189,445 @@
     drawEdges();
     layoutAnnos();
     drawConns();
+    if (layerName === 'mindmap') renderMindmapCards();   // extra info beside the same tree
   }
+
+
+  /* ---------- mind map cards: recordings + notes, names anonymized ----------
+     The mind map never renders raw transcript text. Every string goes through anonText():
+     undefined = still anonymizing, null = could not anonymize (shown as hidden). */
+  var ANON = {}, ANON_FAILED = {}, anonQueue = [], anonBusy = false;
+  function anonText(t) {
+    t = (t || '').trim();
+    if (!t) return '';
+    if (Object.prototype.hasOwnProperty.call(ANON, t)) return ANON[t];
+    if (ANON_FAILED[t] && Date.now() - ANON_FAILED[t] < 15000) return null;   // retry after 15 s
+    if (anonQueue.indexOf(t) < 0) anonQueue.push(t);
+    pumpAnon();
+    return undefined;
+  }
+  function pumpAnon() {
+    if (anonBusy || !anonQueue.length) return;
+    anonBusy = true;
+    var batch = anonQueue.splice(0, 6);
+    fetch(API + '/api/anonymize', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texts: batch }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        batch.forEach(function (t, i) {
+          var v = d && d.texts ? d.texts[i] : null;
+          if (typeof v === 'string') { ANON[t] = v; delete ANON_FAILED[t]; } else ANON_FAILED[t] = Date.now();
+        });
+      })
+      .catch(function () { batch.forEach(function (t) { ANON_FAILED[t] = Date.now(); }); })
+      .then(function () {
+        anonBusy = false;
+        if (layerName === 'mindmap') { renderMindmapCards(); drawInspector(); }
+        pumpAnon();
+      });
+  }
+  function anonHTML(t) {
+    var v = anonText(t);
+    if (v === undefined) return '<span class="pending">anonymizing…</span>';
+    if (v === null) return '<span class="empty">hidden — couldn’t anonymize (is Ollama running?)</span>';
+    return esc(v);
+  }
+
+  // Stopping a session wipes the live state, so keep the last one for the mind map.
+  var MM_LAST = null, mmOpen = {}, mmLayer = null, mmSig = '';
+  function mmSnapshot() {
+    return { steps: STEPS.slice(0, liveIdx + 1), cum: cumEnd.slice(0, liveIdx + 1), lastIdx: liveIdx,
+             clips: redSpans.slice(), marks: userMarks.slice(), tbase: TBASE };
+  }
+  function mmSession() {
+    if (live) return { steps: STEPS, cum: cumEnd, lastIdx: liveIdx, clips: redSpans, marks: userMarks, tbase: TBASE };
+    return MM_LAST;
+  }
+  function mmStepWin(sess, i) {
+    var e = sess.steps[i], end = sess.cum[i];
+    var start = e.tStart != null ? e.tStart * 1000 : (i ? sess.cum[i - 1] : 0);
+    return [start, end];
+  }
+  function mmIsInterviewer(e) { return !!e.a || e.w === I || e.w === LIVE.interviewer; }
+  // readable question label: follow-ups are just '↳', so name them by their parent ('Q4.2 ↳')
+  function mmQLabel(q) {
+    if (!q) return '';
+    if (q.label === '↳' && q.parent && q.parent.label) return q.parent.label + ' ↳';
+    return q.kind === 'opener' ? 'OPENER' : (q.label || '');
+  }
+  function mmVisibleAnchor(id) {            // the question itself, or its nearest visible parent
+    var n = INDEX[id];
+    while (n && n !== ROOT && isHidden(n)) n = n.parent;
+    return (n && n !== ROOT) ? n : topics()[0];
+  }
+  // which kinds of extra information the mind map shows (chips in the banner; remembered)
+  // Answers start off: the summaries already hold every answer, so the right column would repeat them
+  var MM_SHOW = { summary: true, answers: false, recordings: true, notes: true };
+  try { var savedShow = JSON.parse(localStorage.getItem('fn.mmshow2') || 'null'); if (savedShow) MM_SHOW = Object.assign(MM_SHOW, savedShow); } catch (_e) {}
+  function syncMmChips() {
+    document.querySelectorAll('[data-mmshow]').forEach(function (b) {
+      b.classList.toggle('on', !!MM_SHOW[b.dataset.mmshow]);
+      b.setAttribute('aria-pressed', String(!!MM_SHOW[b.dataset.mmshow]));
+    });
+  }
+  // the question a moment relates to: what was being asked at step i (or before)
+  function mmCurAt(sess, i) {
+    for (var k = Math.min(i, sess.lastIdx); k >= 0; k--) if (sess.steps[k] && sess.steps[k].cur) return sess.steps[k].cur;
+    return null;
+  }
+  function mmSignature(sess) {
+    if (!sess) return 'none';
+    var annos = 0;
+    for (var i = 0; i <= sess.lastIdx; i++) {
+      var st = sess.steps[i]; if (st) annos += (st.anno || st.mark || []).length;
+    }
+    var s = sess.lastIdx + '|' + annos + '|' + sess.clips.length + '|' + sess.marks.length;
+    sess.clips.forEach(function (c) { s += '|' + (c.reaction || 0) + ':' + (c.notes ? c.notes.length : 0); });
+    sess.marks.forEach(function (m) { s += '|' + m.text.length; });
+    return s;
+  }
+  function mmMaybeRefresh() {               // cheap; called from updateTL on every live update
+    if (layerName !== 'mindmap') return;
+    var sig = mmSignature(mmSession());
+    if (sig !== mmSig) renderMindmapCards();
+  }
+
+  function renderMindmapCards() {
+    if (!mmLayer) { mmLayer = document.createElement('div'); mmLayer.className = 'mmlayer'; world.appendChild(mmLayer); }
+    mmLayer.innerHTML = '';
+    svg.querySelectorAll('.mmlink').forEach(function (p) { p.remove(); });
+    if (layerName !== 'mindmap') return;
+    var sess = mmSession();
+    mmSig = mmSignature(sess);
+    if (!sess) return;
+    var items = [];
+
+    // answers: every annotated answer, grouped per question (page 2's cards, anonymized)
+    if (MM_SHOW.answers) {
+      var byQ = {}, order = [];
+      for (var si = 0; si <= sess.lastIdx; si++) {
+        var st = sess.steps[si]; if (!st) continue;
+        // live lines carry .anno; the ▶ demo script carries .mark ([id, status]) instead
+        var stList = st.anno || (st.mark || []).map(function (m) { return { id: m[0], kind: 'answer' }; });
+        stList.forEach(function (a) {
+          if (!byQ[a.id]) { byQ[a.id] = []; order.push(a.id); }
+          if (!byQ[a.id].some(function (x) { return x.i === si; })) byQ[a.id].push({ kind: a.kind, text: st.t, i: si });
+        });
+      }
+      order.forEach(function (qid) {
+        var q = INDEX[qid];
+        var html = '<div class="mh">ANSWERS' + (q ? ' · ' + esc(mmQLabel(q)) : '') + '</div>' +
+          byQ[qid].map(function (a) {
+            return '<div class="ma"><div class="mk' + (a.kind === 'ahead' ? ' ahead' : '') + '">' +
+              (a.kind === 'ahead' ? 'ANSWERED AHEAD' : 'ANSWER') + ' · ' + fmtTime(sess.tbase + (sess.cum[a.i] || 0) / 1000) +
+              '</div>' + anonHTML(a.text) + '</div>';
+          }).join('');
+        items.push({ cls: 'ans', html: html, anchor: qid });
+      });
+    }
+
+    // recordings: annotation cards from the clip's window, + its notes, + an openable script
+    if (MM_SHOW.recordings) sess.clips.forEach(function (c) {
+      var inWin = [];
+      for (var i = 0; i <= sess.lastIdx; i++) {
+        var w = mmStepWin(sess, i);
+        if (w[0] < c.endMs && w[1] > c.startMs) inWin.push(i);
+      }
+      var annos = [], seen = {};
+      inWin.forEach(function (i) {
+        var e = sess.steps[i];
+        var list = e.anno || (e.mark || []).map(function (m) { return { id: m[0], kind: 'answer', text: e.t }; });
+        list.forEach(function (a) {
+          if (seen[a.id + a.kind]) return; seen[a.id + a.kind] = 1;
+          annos.push({ id: a.id, kind: a.kind, text: e.t, i: i });
+        });
+      });
+      var anchorId = annos.length ? annos[0].id : mmCurAt(sess, inWin.length ? inWin[inWin.length - 1] : 0);
+      var key = 'c' + Math.round(c.startMs) + '-' + Math.round(c.endMs);
+      var when = fmtTime(sess.tbase + c.startMs / 1000) + ' – ' + fmtTime(sess.tbase + c.endMs / 1000);
+      var rx = c.reaction ? reactMeta(c.reaction) : null;
+      var html = '<div class="mh">● REC · ' + when + '<span class="sp"></span>' +
+        (rx ? '<span class="rx" style="color:' + reactColor(c.reaction) + '" title="' + rx.l + '">' + rx.g + '</span>' : '') + '</div>';
+      // one block per spoken answer: an utterance that covers several questions is shown
+      // once, with every question it answers in the label (not repeated per question)
+      var byStep = [], stepAt = {};
+      annos.forEach(function (a) {
+        if (!stepAt[a.i]) { stepAt[a.i] = { text: a.text, ahead: false, labels: [] }; byStep.push(stepAt[a.i]); }
+        var g = stepAt[a.i], lab = mmQLabel(INDEX[a.id]);
+        if (a.kind === 'ahead') g.ahead = true;
+        if (lab && g.labels.indexOf(lab) < 0) g.labels.push(lab);
+      });
+      if (byStep.length) byStep.forEach(function (g) {
+        html += '<div class="ma"><div class="mk' + (g.ahead ? ' ahead' : '') + '">' +
+          (g.ahead ? 'ANSWERED AHEAD' : 'ANSWER') + (g.labels.length ? ' · ' + esc(g.labels.join(', ')) : '') +
+          '</div>' + anonHTML(g.text) + '</div>';
+      });
+      else html += '<div class="empty">No annotated answer in this clip.</div>';
+      (c.notes || []).forEach(function (nt) { html += '<div class="mnote">✎ ' + anonHTML(nt) + '</div>'; });
+      if (inWin.length) html += '<button class="open" data-open="' + key + '">' +
+        (mmOpen[key] ? 'Close script ‹' : 'Open full script ›') + '</button>';
+      var script = null;
+      if (mmOpen[key]) {
+        var hit = {}; annos.forEach(function (a) { hit[a.i] = 1; });
+        script = '<div class="sh">SCRIPT · ' + when + '<span class="sp"></span><button data-close="' + key + '" aria-label="Close">×</button></div>' +
+          inWin.map(function (i) {
+            var e = sess.steps[i], isInt = mmIsInterviewer(e);
+            return '<div class="sl' + (isInt ? ' int' : '') + (hit[i] ? ' hit' : '') + '"><span class="sw">' +
+              (isInt ? 'INTERVIEWER' : 'CANDIDATE') + '</span>' + anonHTML(e.t) + '</div>';
+          }).join('');
+      }
+      items.push({ cls: 'rec', html: html, anchor: anchorId, script: script });
+    });
+
+    // timeline notes ("Add note" during the interview)
+    if (MM_SHOW.notes) sess.marks.forEach(function (m) {
+      if (m.q) return;                    // added questions are real nodes in the tree already
+      items.push({ cls: 'note', anchor: m.host || mmCurAt(sess, m.idx),
+        html: '<div class="mh">✎ NOTE · ' + fmtTime(sess.tbase + (sess.cum[m.idx] || 0) / 1000) + '</div>' + anonHTML(m.text) });
+    });
+    if (MM_SHOW.summary) renderMindmapSummaries(sess);   // left of the tree
+    if (!items.length) return;
+
+    // build DOM, then measure all heights in one pass (no read/write interleaving)
+    items.forEach(function (it) {
+      it.node = mmVisibleAnchor(it.anchor);
+      it.el = document.createElement('div');
+      it.el.className = 'mmcard ' + it.cls;
+      it.el.innerHTML = it.html;
+      mmLayer.appendChild(it.el);
+      if (it.script) {
+        it.sEl = document.createElement('div');
+        it.sEl.className = 'mmscript';
+        it.sEl.innerHTML = it.script;
+        it.sEl.addEventListener('wheel', function (ev) { ev.stopPropagation(); }, { passive: true });
+        mmLayer.appendChild(it.sEl);
+      }
+    });
+    items.forEach(function (it) { it.h = it.el.offsetHeight; it.w = it.el.offsetWidth; });
+
+    // one column to the right of the tree; each card level with its question, pushed
+    // down only as far as needed to clear the card above. Scripts open beside their card.
+    // Cards sit level with their question. If the lane is still occupied there, the card goes
+    // into the next lane to the right (up to 3) rather than being pushed down the page —
+    // pushing down is what made the link lines stretch.
+    var colX = X[2] + W[2] + 70, kindOrder = { ans: 0, rec: 1, note: 2 }, lanes = [], LANES = 3, SLACK = 24;
+    items.forEach(function (it) { it.ay = it.node.y + it.node.h / 2; });
+    items.sort(function (a, b) { return (a.ay - b.ay) || (kindOrder[a.cls] - kindOrder[b.cls]); });
+    items.forEach(function (it) {
+      var want = it.ay - 14, lane = -1;
+      for (var l = 0; l < lanes.length; l++) if (lanes[l].bottom + 12 <= want + SLACK) { lane = l; break; }
+      if (lane < 0 && lanes.length < LANES) { lanes.push({ bottom: -Infinity, x: lanes.length ? lanes[lanes.length - 1].x + lanes[lanes.length - 1].w + 16 : colX, w: 0 }); lane = lanes.length - 1; }
+      if (lane < 0) {                       // all lanes busy: least-crowded lane, pushed down
+        lane = 0; lanes.forEach(function (L, i) { if (L.bottom < lanes[lane].bottom) lane = i; });
+      }
+      var L = lanes[lane], top = Math.max(want, L.bottom + 12);
+      L.w = Math.max(L.w, it.w);
+      it.el.style.left = L.x + 'px'; it.el.style.top = top + 'px';
+      it.cx = L.x; it.cy = top + 14; L.bottom = top + it.h;
+      if (it.sEl) { it.sEl.style.left = (L.x + it.w + 14) + 'px'; it.sEl.style.top = top + 'px'; it.sEl.style.zIndex = 8; }
+    });
+
+    // dashed links from each question to its cards
+    var paths = items.map(function (it) {
+      var n = it.node, ax = n.x + W[n.depth], ay = n.y + n.h / 2, dx = Math.max(30, (it.cx - ax) / 2);
+      return '<path class="mmlink ' + it.cls + '" d="M' + ax + ' ' + ay + ' C' + (ax + dx) + ' ' + ay + ',' +
+        (it.cx - dx) + ' ' + it.cy + ',' + it.cx + ' ' + it.cy + '"/>';
+    });
+    svg.insertAdjacentHTML('beforeend', paths.join(''));
+  }
+
+  /* ---------- category summaries: left of the tree ----------
+     One card per topic: an AI summary of what was said (built from ANONYMIZED answers only),
+     expandable into the individual answers. Each answer branches to every question it
+     covers — in this topic or another — and clicking an answer, chip or branch jumps there. */
+  var mmSumOpen = {}, SUMS = {}, SUM_LAST = {}, sumQueue = [], sumBusy = false;
+  function mmCategories(sess) {
+    var cats = {}, order = [];
+    for (var i = 0; i <= sess.lastIdx; i++) {
+      var st = sess.steps[i]; if (!st) continue;
+      var list = st.anno || (st.mark || []).map(function (m) { return { id: m[0], kind: 'answer' }; });
+      var qids = [], ahead = false;
+      list.forEach(function (a) { if (INDEX[a.id] && qids.indexOf(a.id) < 0) qids.push(a.id); if (a.kind === 'ahead') ahead = true; });
+      var seenT = {};
+      qids.forEach(function (id) {
+        var t = topicOf(INDEX[id]); if (!t || seenT[t.id]) return;
+        seenT[t.id] = 1;
+        if (!cats[t.id]) { cats[t.id] = { topic: t, answers: [] }; order.push(t.id); }
+        cats[t.id].answers.push({ i: i, text: st.t, qids: qids, ahead: ahead });
+      });
+    }
+    return order.map(function (id) { return cats[id]; });
+  }
+  function summaryFor(cat) {
+    // undefined = working on it; null = unavailable; string = the summary
+    var anon = cat.answers.map(function (a) { return anonText(a.text); });
+    if (anon.some(function (v) { return v === undefined; })) return undefined;
+    var texts = anon.filter(function (v) { return typeof v === 'string' && v; });
+    if (!texts.length) return null;
+    var key = cat.topic.id + '\x1f' + texts.join('\x1e');
+    if (Object.prototype.hasOwnProperty.call(SUMS, key)) return SUMS[key];
+    if (!sumQueue.some(function (q) { return q.key === key; }))
+      sumQueue.push({ key: key, topicId: cat.topic.id, topic: cat.topic.text, texts: texts });
+    pumpSum();
+    return undefined;
+  }
+  function pumpSum() {
+    if (sumBusy || !sumQueue.length) return;
+    sumBusy = true;
+    var job = sumQueue.shift();
+    fetch(API + '/api/summarize', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic: job.topic, texts: job.texts }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { SUMS[job.key] = (d && typeof d.summary === 'string') ? d.summary : null; })
+      .catch(function () { SUMS[job.key] = null; })
+      .then(function () {
+        if (typeof SUMS[job.key] === 'string') SUM_LAST[job.topicId] = SUMS[job.key];
+        sumBusy = false;
+        if (layerName === 'mindmap') renderMindmapCards();
+        pumpSum();
+      });
+  }
+  // vertical extent of a topic's visible questions (the block the tree draws for it)
+  function mmBlock(t) {
+    var y0 = t.y, y1 = t.y + t.h;
+    subtree(t).forEach(function (n) {
+      if (n.y == null || isHidden(n)) return;
+      y0 = Math.min(y0, n.y); y1 = Math.max(y1, n.y + (n.h || 0));
+    });
+    return { y: y0, h: y1 - y0 };
+  }
+  function renderMindmapSummaries(sess) {
+    var cats = mmCategories(sess);
+    if (!cats.length) return;
+    var bottom = -Infinity, cards = [];
+    cats.forEach(function (cat) {
+      var t = cat.topic, open = !!mmSumOpen[t.id], s = summaryFor(cat);
+      var sumHTML = typeof s === 'string' ? esc(s)
+        : s === null ? '<span class="empty">Summary unavailable — expand to read the answers.</span>'
+        : (SUM_LAST[t.id] ? esc(SUM_LAST[t.id]) + ' <span class="pending">updating…</span>' : '<span class="pending">summarizing…</span>');
+      var html = '<div class="mh">' + esc(t.label || '') + ' · ' + esc(t.text) + '<span class="sp"></span>' +
+        cat.answers.length + (cat.answers.length === 1 ? ' ANSWER' : ' ANSWERS') + '</div>' +
+        '<div class="ai">AI SUMMARY</div><div class="sumtx">' + sumHTML + '</div>' +
+        '<button class="open" data-sumopen="' + t.id + '">' + (open ? '▾ Hide answers' : '▸ Show ' + cat.answers.length + (cat.answers.length === 1 ? ' answer' : ' answers')) + '</button>';
+      if (open) html += '<div class="srows">' + cat.answers.map(function (a, k) {
+        var chips = a.qids.map(function (id) {
+          var q = INDEX[id], other = q.topic !== t.topic;
+          return '<button class="mmq' + (other ? ' other' : '') + '" data-goto="' + id + '" title="Go to this question">' +
+            esc(mmQLabel(q)) + (other ? ' · T' + q.topic : '') + '</button>';
+        }).join('');
+        return '<div class="srow' + (a.ahead ? ' ahead' : '') + '" data-row="' + k + '" data-goto="' + a.qids[0] + '">' +
+          '<div class="stx">' + anonHTML(a.text) + '</div><div class="sq">' + chips + '</div></div>';
+      }).join('') + '</div>';
+      var el = document.createElement('div');
+      el.className = 'mmcard sum';
+      el.innerHTML = html;
+      mmLayer.appendChild(el);
+      cards.push({ cat: cat, el: el, open: open });
+    });
+    // An open category grows WIDER, not taller: answers sit side by side in up to 4 columns
+    // (3 for most categories), so even a long list stays a few rows deep.
+    var colRight = X[0] - 90;                                         // cards hug the tree's left edge
+    cards.forEach(function (c) {
+      c.block = mmBlock(c.cat.topic);
+      if (!c.open) return;
+      var n = c.cat.answers.length, cols = Math.min(n, n >= 8 ? 4 : 3);
+      c.el.style.width = (cols * 290 + 24) + 'px';
+      c.el.querySelector('.srows').style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
+    });
+    cards.forEach(function (c) { c.h = c.el.offsetHeight; c.w = c.el.offsetWidth; });   // one read pass
+    var paths = [];
+    cards.forEach(function (c) {
+      var t = c.cat.topic, ay = t.y + t.h / 2;
+      var top = Math.max(c.open ? c.block.y : ay - 14, bottom + 14);  // open card spans its question block
+      var left = colRight - c.w;
+      c.el.style.left = left + 'px'; c.el.style.top = top + 'px'; bottom = top + c.h;
+      var x1 = colRight, y1 = top + 14;                               // card -> its topic
+      paths.push('<path class="mmlink sum" d="M' + x1 + ' ' + y1 + ' C' + (x1 + 45) + ' ' + y1 + ',' +
+        (t.x - 45) + ' ' + ay + ',' + t.x + ' ' + ay + '"/>');
+      if (!c.open) return;
+      c.el.querySelectorAll('.srow').forEach(function (row) {         // answer -> each question it covers
+        var a = c.cat.answers[+row.dataset.row], ry = top + row.offsetTop + row.offsetHeight / 2;
+        var rx = left + row.offsetLeft + row.offsetWidth;             // start at the answer's own right edge
+        a.qids.forEach(function (id) {
+          var n = mmVisibleAnchor(id), ny = n.y + n.h / 2, other = INDEX[id].topic !== t.topic;
+          var d = 'M' + rx + ' ' + ry + ' C' + (x1 + 120) + ' ' + ry + ',' + (n.x - 120) + ' ' + ny + ',' + n.x + ' ' + ny;
+          var k = t.id + ':' + row.dataset.row;   // branches stay hidden until their answer is hovered
+          paths.push('<path class="mmhit" data-k="' + k + '" data-goto="' + id + '" d="' + d + '"/>' +       // wide click target first,
+            '<path class="mmbranch' + (other ? ' other' : '') + (a.ahead ? ' ahead' : '') + '" data-k="' + k + '" d="' + d + '"/>');
+        });
+      });
+    });
+    svg.insertAdjacentHTML('beforeend', paths.join(''));
+
+    // focus: with a category open, fade every question it doesn't touch
+    NODES.forEach(function (n) { if (n.el) { n.el.classList.remove('mmdim'); n.el.classList.remove('mmhl'); } });
+    mmHoverK = null;
+    var openCard = cards.filter(function (c) { return c.open; })[0];
+    if (openCard) {
+      var keep = {}, tn = openCard.cat.topic.topic;
+      openCard.cat.answers.forEach(function (a) {
+        a.qids.forEach(function (id) { for (var n = INDEX[id]; n && n !== ROOT; n = n.parent) keep[n.id] = 1; });
+      });
+      NODES.forEach(function (n) { if (n.el && n.topic !== tn && !keep[n.id]) n.el.classList.add('mmdim'); });
+    }
+  }
+  // hovering an answer shows its branches and lights up the questions they lead to
+  function mmHoverRow(row, on) {
+    var card = row.closest('.mmcard.sum'), btn = card && card.querySelector('[data-sumopen]');
+    if (!btn) return;
+    var k = btn.dataset.sumopen + ':' + row.dataset.row;
+    svg.querySelectorAll('[data-k="' + k + '"]').forEach(function (p) {
+      p.classList.toggle('on', on);
+      if (p.classList.contains('mmhit') && INDEX[p.getAttribute('data-goto')]) {
+        var n = mmVisibleAnchor(p.getAttribute('data-goto'));
+        if (n && n.el) n.el.classList.toggle('mmhl', on);
+      }
+    });
+  }
+  // the last hovered answer's branches stay up, so the cursor can travel along one and click it
+  var mmHoverK = null;
+  document.addEventListener('mouseover', function (e) {
+    var r = e.target.closest && e.target.closest('.mmcard.sum .srow');
+    if (!r || r.dataset.row === mmHoverK) return;
+    svg.querySelectorAll('.mmbranch.on, .mmhit.on').forEach(function (p) { p.classList.remove('on'); });
+    NODES.forEach(function (n) { if (n.el) n.el.classList.remove('mmhl'); });
+    mmHoverK = r.dataset.row;
+    mmHoverRow(r, true);
+  });
+  function mmGoto(id) {
+    var n = INDEX[id]; if (!n) return;
+    select(id, true);                       // reveals collapsed parents, selects, glides the camera
+    n.el.classList.remove('mmflash'); void n.el.offsetWidth; n.el.classList.add('mmflash');
+    setTimeout(function () { n.el.classList.remove('mmflash'); }, 1700);
+  }
+  document.addEventListener('click', function (e) {
+    var s = e.target.closest('[data-sumopen]');
+    if (s) {                                // one category open at a time
+      var was = !!mmSumOpen[s.dataset.sumopen];
+      mmSumOpen = {}; mmSumOpen[s.dataset.sumopen] = !was;
+      renderMindmapCards(); return;
+    }
+    var g = e.target.closest('.mmlayer [data-goto], .mmhit[data-goto]');
+    if (g) mmGoto(g.getAttribute('data-goto'));
+  });
+
+  // show / hide each kind of extra information
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-mmshow]');
+    if (!b) return;
+    MM_SHOW[b.dataset.mmshow] = !MM_SHOW[b.dataset.mmshow];
+    try { localStorage.setItem('fn.mmshow2', JSON.stringify(MM_SHOW)); } catch (_e) {}
+    syncMmChips(); renderMindmapCards();
+  });
+
+  // open / close a recording's full script
+  document.addEventListener('click', function (e) {
+    var o = e.target.closest('.mmcard [data-open], .mmscript [data-close]');
+    if (!o) return;
+    var key = o.dataset.open || o.dataset.close;
+    mmOpen[key] = !!o.dataset.open && !mmOpen[key];
+    renderMindmapCards();
+  });
 
   function drawEdges() {
     var parts = [];
@@ -1214,7 +1812,7 @@
   /* ---------- pan & zoom ---------- */
   var pan = null;
   viewport.addEventListener('pointerdown', function (e) {
-    var ui = '.zoomctl,.caps,.anode,.sticky,.dock,.transport,.rater,.qnote,.livenote,.worldnote,.filemenu,.pnote,.conn-hit';
+    var ui = '.zoomctl,.caps,.anode,.sticky,.dock,.transport,.rater,.qnote,.livenote,.worldnote,.filemenu,.pnote,.conn-hit,.mmcard,.mmscript,.mmchips,.mmhit,.xmodal';
     var block = layerName === 'notes' ? ui : '.node,.fold,.ghost,' + ui;
     if (e.target.closest(block)) return;
     breakFollow();
@@ -1435,7 +2033,7 @@
     var el = e.target.closest('.node');
     if (!editing) return;
     if (!el || e.target.closest('.ctl') || e.target.closest('[contenteditable="true"]')) return;
-    if (app.classList.contains('layer-notes')) return;
+    if (app.classList.contains('layer-notes') || app.classList.contains('layer-mindmap')) return;
     var n = INDEX[el.dataset.id];
     var p = toWorld(e.clientX, e.clientY);
     drag = { n: n, ox: p.x - n.x, oy: p.y - n.y, started: false, pid: e.pointerId };
@@ -1529,7 +2127,8 @@
     if (live && notes.length) {
       html += '<div class="kicker">COVERED OUT OF ORDER · ' + notes.length + '</div><div class="notes">';
       notes.slice().reverse().forEach(function (x) {
-        html += '<button class="note" data-jump="' + x.id + '"><b>' + x.label + ' · TOPIC ' + x.topic + '</b>' + esc(x.text) + '</button>';
+        html += '<button class="note" data-jump="' + x.id + '"><b>' + x.label + ' · TOPIC ' + x.topic + '</b>' +
+          (layerName === 'mindmap' ? anonHTML(x.text) : esc(x.text)) + '</button>';   // mind map: anonymized only
       });
       html += '</div><div class="hr" style="margin-top:6px"></div>';
     }
@@ -1669,6 +2268,8 @@
   scrim.addEventListener('mousedown', function (e) { if (e.target === scrim) closePal(); });
   $('palBtn').addEventListener('click', openPal);
   document.addEventListener('keydown', function (e) {
+    var xm = document.querySelector('.xmodal:not([hidden])');   // export / import window: no shortcuts
+    if (xm) { if (e.key === 'Escape') xm.hidden = true; return; }
     if (!$('helpScrim').hidden) { if (e.key === 'Escape' || e.key === '?') { e.preventDefault(); toggleHelp(false); } return; }
     if (e.key === '?' && !e.metaKey && !e.ctrlKey && !document.querySelector('[contenteditable="true"]:focus')) { e.preventDefault(); toggleHelp(true); return; }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPal(); return; }
@@ -1716,20 +2317,33 @@
     el.innerHTML = '<span class="m">' + lab + '<span class="src">' + a.stamp +
       (kind === 'ahead' ? ' · FROM T' + a.from : '') + '</span></span>' +
       '<div class="tx" contenteditable="true" spellcheck="false">' + esc(text) + '</div>';
-    a.el = el; annoList.push(a); annolayer.appendChild(el); a.h = el.offsetHeight;
+    a.el = el; annoList.push(a); annolayer.appendChild(el);
     if (n.parent && n.parent.collapsed) { n.parent.collapsed = false; ensureFold(n.parent); }
-    updateCount(); layout();
+    updateCount(); scheduleLayout();
+  }
+  // Live coverage can add several annotations per poll; coalesce them into one layout per
+  // frame instead of a full re-layout (edges, notes, connectors) for every single match.
+  var layoutQueued = false;
+  function scheduleLayout() {
+    if (layoutQueued) return;
+    layoutQueued = true;
+    requestAnimationFrame(function () { layoutQueued = false; layout(); });
   }
   function clearAnnos() { annoList.forEach(function (a) { a.el.remove(); }); annoList = []; updateCount(); layoutAnnos(); }
   function updateCount() { noteCnt.textContent = annoList.length + stickies.length; }
 
   function layoutAnnos() {
     var lanes = {}, paths = [];
-    annoList.forEach(function (a) {
+    // read every height in one pass BEFORE any position writes — interleaving reads with
+    // writes forces a synchronous reflow per annotation
+    var vis = annoList.filter(function (a) {
+      var n = INDEX[a.id], show = !!n && !isHidden(n);
+      a.el.style.display = show ? '' : 'none';
+      return show;
+    });
+    vis.forEach(function (a) { a.h = a.el.offsetHeight || a.h; });
+    vis.forEach(function (a) {
       var n = INDEX[a.id];
-      if (!n || isHidden(n)) { a.el.style.display = 'none'; return; }
-      a.el.style.display = '';
-      a.h = a.el.offsetHeight || a.h;
       var lane = n.depth, x = X[n.depth] + W[n.depth] + 30, y = n.y + 6;
       lanes[lane] = lanes[lane] || [];
       lanes[lane].forEach(function (p) { if (y < p.b + 7 && y + a.h > p.t - 7) y = p.b + 7; });
@@ -1777,7 +2391,7 @@
   });
   viewport.addEventListener('dblclick', function (e) {
     if (editing || layerName === 'mindmap') return;
-    if (e.target.closest('.node,.fold,.ghost,.pnote,.sticky,.anode,.zoomctl,.caps,.dock,.transport,.filemenu,.conn-hit,.rater,.qnote')) return;
+    if (e.target.closest('.node,.fold,.ghost,.pnote,.sticky,.anode,.zoomctl,.caps,.dock,.transport,.filemenu,.conn-hit,.rater,.qnote,.xmodal')) return;
     var p = toWorld(e.clientX, e.clientY);
     addPageNote(p.x, p.y);            // notes are addable anytime, right on the canvas
   });
@@ -1793,12 +2407,14 @@
     var d = $('dock');
     if (d) d.querySelectorAll('[data-scene]').forEach(function (b) { b.classList.toggle('on', b.dataset.scene === name); });
     hint.textContent = name === 'notes' ? 'DOUBLE-CLICK TO DROP A STICKY'
-      : name === 'mindmap' ? 'MIND MAP — COMING SOON · S CYCLES SCENES'
+      : name === 'mindmap' ? 'MIND MAP · ANSWERS, RECORDINGS & NOTES BESIDE EACH QUESTION · S CYCLES'
       : 'DRAG TO PAN · ⌥SCROLL TO ZOOM · E TO EDIT';
     X[2] = name === 'notes' ? X_NOTES : X_TREE;
     NODES.forEach(function (n) { if (n.depth === 2 && n.el) n.el.style.left = X[2] + 'px'; });
     pageNotes.forEach(function (nt) { nt.expanded = false; updateCollapse(nt); });   // dots on tree, full on mind map
+    syncMmChips();
     layout();
+    drawInspector();                      // its transcript snippets switch to anonymized on the mind map
   }
   function cycleScene() { setLayer(SCENES[(SCENES.indexOf(layerName) + 1) % SCENES.length]); }
   function setDockLive(on) {
@@ -2133,7 +2749,8 @@
         if (!s.running && liveIdx < 0) {
           var rec = caps.querySelector('.rec');
           if (rec) rec.textContent =
-            LIVE.src === 'system' ? 'Capture stopped — grant Screen Recording & run ./start.sh in your terminal'
+            LIVE.src === 'call' ? 'Capture stopped — allow Microphone for Fieldnotes System Audio, run ./start.sh in your terminal'
+            : LIVE.src === 'system' ? 'Capture stopped — allow audio recording & run ./start.sh in your terminal'
             : LIVE.src === 'device' ? 'Capture stopped — grant Microphone permission & restart the server'
             : 'Capture stopped before any audio — see diarization/pipeline.log';
         }
@@ -2225,7 +2842,10 @@
       '</span></span>' + esc(note.text);
     el.addEventListener('click', function () { select(note.id); dismiss(el); });
     toasts.appendChild(el);
-    while (toasts.children.length > 3) dismiss(toasts.firstChild);
+    // keep at most 3 visible. Count only toasts not already fading out: dismiss() is a no-op
+    // on a fading one, so looping on children.length spun forever and froze the whole tab.
+    var showing = [].filter.call(toasts.children, function (t) { return !t.classList.contains('out'); });
+    while (showing.length > 3) dismiss(showing.shift());
     setTimeout(function () { dismiss(el); }, 8000);
   }
   function dismiss(el) {
@@ -2313,6 +2933,7 @@
   }
 
   function stopLive() {
+    if (liveIdx >= 0 || redSpans.length || userMarks.length) MM_LAST = mmSnapshot();   // keep it for the mind map
     clearTimeout(timer); live = false;
     if (LIVE.poll) { clearInterval(LIVE.poll); LIVE.poll = null; }
     if (liveReal) fetch(API + '/api/stop', { method: 'POST' }).catch(function () {});   // stop the pipeline too
@@ -2425,9 +3046,13 @@
     userMarks.forEach(function (m) { placeMark(m.el, (cumEnd[m.idx] / span) * LIVE_X); });
     // red record clips: skinny band underneath the timeline line
     var sTop = (cyRel + 5) + 'px', sH = '7px';
-    if (recSpan) recSpan.endMs = recNow();
+    // while held, the clip runs from the press point forward in real time (the transcript
+    // lags the audio, so wall-clock time, not the latest segment, decides where it ends)
+    if (recSpan) recSpan.endMs = Math.max(recNow(), recSpan.pressMs + (Date.now() - recSpan.pressedAt));
     redSpans.concat(recSpan ? [recSpan] : []).forEach(function (s) {
-      var a = (clamp(s.startMs, 0, recNow()) / span) * LIVE_X, b = (clamp(s.endMs, 0, recNow()) / span) * LIVE_X;
+      // the end may run past the transcript head while R is held (the transcript lags the
+      // audio) — let it grow into the "future" strip so the hold is visible, capped at the track
+      var a = (clamp(s.startMs, 0, recNow()) / span) * LIVE_X, b = Math.min(1, (Math.max(0, s.endMs) / span) * LIVE_X);
       s.el.style.left = (a * 100) + '%'; s.el.style.width = (Math.max(0, b - a) * 100) + '%';
       s.el.style.top = sTop; s.el.style.height = sH;
     });
@@ -2435,6 +3060,7 @@
     else el.classList.remove('recording');
     if (rateTarget) positionRater();
     if (tlCursorX != null) tlMagnify();   // keep bars widened as they slide under a still cursor
+    mmMaybeRefresh();                     // new clip / note / segment while the mind map is open
   }
 
   /* ---------- timeline tooltips ---------- */
@@ -2466,7 +3092,7 @@
     }, m.text);
   }
   function addUserMark(idx, text) {
-    var m = { idx: clamp(idx, 0, Math.max(0, liveIdx)), text: text };
+    var m = { idx: clamp(idx, 0, Math.max(0, liveIdx)), text: text, host: current };   // host: the question it belongs to
     var dot = document.createElement('button');
     dot.className = 'tl-mark user';
     attachTip(dot, function () { return 'YOUR NOTE · ' + fmtTime(timeAtIdx(m.idx)) + ' · click to edit'; }, function () { return m.text; });
@@ -2515,7 +3141,7 @@
 
   function topicOf(n) { while (n && n.depth > 0) n = n.parent; return (n && n.id !== '_root') ? n : topics()[0]; }
   function addQMark(idx, text) {
-    var m = { idx: clamp(idx, 0, Math.max(0, liveIdx)), text: text };
+    var m = { idx: clamp(idx, 0, Math.max(0, liveIdx)), text: text, q: true };   // q: an added question, not a note
     var el = document.createElement('button');
     el.className = 'tl-mark q';
     attachTip(el, function () { return 'ADDED QUESTION · ' + fmtTime(timeAtIdx(m.idx)); }, function () { return m.text; });
@@ -2550,7 +3176,7 @@
       el.classList.remove('active'); if (qnoteTimer) clearTimeout(qnoteTimer);
     });
     if (qnoteTimer) clearTimeout(qnoteTimer);
-    qnoteTimer = setTimeout(function () { el.classList.remove('active'); }, 8000);
+    qnoteTimer = setTimeout(function () { el.classList.remove('active'); }, 20000);   // ≥20 s; × still closes it sooner
   }
 
   /* ---------- R = record a red clip on the timeline ---------- */
@@ -2559,16 +3185,14 @@
   function startRec(isRepeat) {
     if (!live || reviewing || isRepeat || recSpan) return;
     var end = recNow();
-    recSpan = { startMs: Math.max(0, end - 10000), endMs: end, el: document.createElement('button') };
+    // press = start 10 s back; holding keeps recording forward; release ends the clip
+    recSpan = { startMs: Math.max(0, end - 10000), endMs: end, pressMs: end, pressedAt: Date.now(),
+                el: document.createElement('button') };
     recSpan.el.className = 'tl-rec live';
     $('tlTrack').appendChild(recSpan.el);
     app.classList.add('recording');
     showRater(recSpan);
-    recTimer = setInterval(function () {                 // hold R → keep pulling 10s further back
-      if (!recSpan) return;
-      recSpan.startMs = Math.max(0, recSpan.startMs - 10000);
-      updateTL();
-    }, 650);
+    recTimer = setInterval(updateTL, 250);               // grow the red bar while R is held
     updateTL();
   }
   function stopRec() {
@@ -2576,6 +3200,7 @@
     app.classList.remove('recording');
     if (!recSpan) return;
     var s = recSpan; recSpan = null;
+    s.endMs = Math.max(recNow(), s.pressMs + (Date.now() - s.pressedAt));   // ends exactly at release
     s.el.classList.remove('live');
     s.el.addEventListener('click', function (ev) { ev.stopPropagation(); addClipNote(s); });
     attachTip(s.el, function () { return 'RECORDED CLIP · click to add a note'; }, function () {
@@ -2716,6 +3341,172 @@
   if (liveBtn) liveBtn.addEventListener('click', function () { live ? stopLive() : startLiveBackend(); });
 
 
+  /* ================= export: Word / PDF document of the tree + session ================= */
+  var XOPT = { format: 'docx', transcript: 'annotated' };
+  function exportPayload() {
+    var sess = mmSession(), fname = (FILES.filter(function (x) { return x.id === ACTIVE; })[0] || {}).name;
+    var qlabel = {}, qtext = {};
+    NODES.forEach(function (n) { if (n.depth > 0) { qlabel[n.id] = mmQLabel(n); qtext[n.id] = n.text; } });
+    var plan = topics().map(function (t) {
+      return { label: t.label, text: t.text, children: t.children.map(function (q) {
+        return { id: q.id, label: mmQLabel(q), text: q.text, added: !!q.added, children: q.children.map(function (f) {
+          return { id: f.id, label: '↳', text: f.text, added: !!f.added };
+        }) };
+      }) };
+    });
+    var d = {
+      title: $('xTitle').value.trim() || fname || 'Interview', format: XOPT.format,
+      options: { questions: $('xQuestions').checked, transcript: XOPT.transcript, notes: $('xNotes').checked,
+                 recordings: $('xRec').checked, anonymize: $('xAnon').checked },
+      plan: plan, qlabel: qlabel, qtext: qtext, steps: [], clips: [], notes: [],
+      page_notes: pageNotes.map(function (n) { return (n.text || '').trim(); }).filter(Boolean)
+    };
+    if (sess && sess.lastIdx >= 0) {
+      var at = function (ms) { return fmtTime(sess.tbase + ms / 1000); };
+      for (var i = 0; i <= sess.lastIdx; i++) {
+        var e = sess.steps[i]; if (!e) continue;
+        var w = mmStepWin(sess, i);
+        d.steps.push({ time: at(w[0]), start: w[0], end: w[1], text: e.t, speaker: e.w,
+          role: mmIsInterviewer(e) ? 'Interviewer' : 'Candidate',
+          marks: (e.mark || []).map(function (m) { return [m[0], m[1]]; }),
+          ahead: (e.anno || []).filter(function (a) { return a.kind === 'ahead'; }).map(function (a) { return a.id; }) });
+      }
+      d.duration = at(sess.cum[sess.lastIdx] || 0);
+      d.clips = sess.clips.map(function (c) {
+        return { start: c.startMs, end: c.endMs, time: at(c.startMs) + ' – ' + at(c.endMs),
+                 reaction: c.reaction ? reactMeta(c.reaction).l : '', notes: (c.notes || []).slice() };
+      });
+      d.notes = sess.marks.filter(function (m) { return !m.q; }).map(function (m) {
+        return { time: at(sess.cum[m.idx] || 0), text: m.text, qid: m.host || mmCurAt(sess, m.idx) };
+      });
+    }
+    return d;
+  }
+  function syncExportUI() {
+    var sess = mmSession(), has = !!(sess && sess.lastIdx >= 0);
+    document.querySelectorAll('#exportModal [data-xseg]').forEach(function (seg) {
+      seg.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', XOPT[seg.dataset.xseg] === b.dataset.v); });
+    });
+    document.querySelectorAll('#exportModal [data-xseg="transcript"] button').forEach(function (b) { b.disabled = !has && b.dataset.v !== 'none'; });
+    $('xRec').disabled = !has; $('xRec').closest('label').classList.toggle('off', !has);
+    var n = has ? (sess.lastIdx + 1) : 0, c = has ? sess.clips.length : 0;
+    $('xInfo').textContent = has
+      ? (live ? 'Current interview' : 'Last interview') + ': ' + n + ' lines, ' + c + ' recorded clip' + (c === 1 ? '' : 's') + '.'
+      : 'No interview recorded yet — the document will contain the question plan and notes.';
+  }
+  function openExport() {
+    var f = FILES.filter(function (x) { return x.id === ACTIVE; })[0];
+    $('xTitle').value = f ? f.name : 'Interview';
+    var sess = mmSession();
+    if (!(sess && sess.lastIdx >= 0)) XOPT.transcript = 'none';
+    $('xStatus').textContent = ''; $('xStatus').classList.remove('err');
+    syncExportUI();
+    $('exportModal').hidden = false;
+  }
+  $('exportModal').addEventListener('click', function (e) {
+    if (e.target === $('exportModal') || e.target.closest('[data-xclose]')) { $('exportModal').hidden = true; return; }
+    var b = e.target.closest('[data-xseg] button');
+    if (b && !b.disabled) { XOPT[b.parentNode.dataset.xseg] = b.dataset.v; syncExportUI(); }
+  });
+  $('xGo').addEventListener('click', function () {
+    var d = exportPayload(), st = $('xStatus'), go = $('xGo');
+    var lines = d.steps.length + d.notes.length;
+    st.classList.remove('err');
+    st.textContent = d.options.anonymize && lines ? 'Anonymizing ' + lines + ' texts, then building…' : 'Building…';
+    go.disabled = true;
+    fetch(API + '/api/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) })
+      .then(function (r) {
+        if (!r.ok) return r.json().then(function (j) { throw new Error(j.error || ('HTTP ' + r.status)); });
+        var cd = r.headers.get('Content-Disposition') || '', m = cd.match(/filename="([^"]+)"/);
+        return r.blob().then(function (b) { return { blob: b, name: m ? m[1] : 'interview.' + d.format }; });
+      })
+      .then(function (res) {
+        var url = URL.createObjectURL(res.blob), a = document.createElement('a');
+        a.href = url; a.download = res.name; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+        st.textContent = 'Downloaded ' + res.name;
+      })
+      .catch(function (err) {
+        st.classList.add('err');
+        st.textContent = /Failed to fetch/i.test(err.message) ? 'No backend — start the server (./start.sh)' : err.message;
+      })
+      .then(function () { go.disabled = false; });
+  });
+
+  /* ================= import: build a tree from tldraw / Miro export / Word / PDF / picture ===== */
+  var IMP = null;                           // last parsed result {name, topics, info}
+  function openImport() {
+    IMP = null;
+    $('iFile').value = ''; $('iPreview').hidden = true; $('iNameRow').hidden = true;
+    $('iStatus').textContent = ''; $('iStatus').classList.remove('err'); $('iGo').disabled = true;
+    $('importModal').hidden = false;
+  }
+  function importFile(file) {
+    if (!file) return;
+    var st = $('iStatus');
+    st.classList.remove('err');
+    st.textContent = 'Reading ' + file.name + '…';
+    $('iGo').disabled = true; $('iPreview').hidden = true;
+    var rd = new FileReader();
+    rd.onload = function () {
+      st.textContent = /\.(png|jpe?g|heic|heif|webp|gif|tiff?)$/i.test(file.name)
+        ? 'Reading the text in the picture (on this Mac)…' : 'Building the tree…';
+      fetch(API + '/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: file.name, data: rd.result }) })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; }); })
+        .then(function (res) {
+          IMP = res;
+          $('iPreview').innerHTML = '<div class="info">' + esc(res.info) + '</div>' + res.topics.map(function (t) {
+            return '<div class="it">' + esc(t.title) + '</div>' + t.questions.map(function (q) {
+              return '<div class="iq">• ' + esc(q.text) + '</div>' +
+                q.followups.map(function (f) { return '<div class="if">↳ ' + esc(f) + '</div>'; }).join('');
+            }).join('');
+          }).join('');
+          $('iPreview').hidden = false;
+          $('iName').value = res.name; $('iNameRow').hidden = false;
+          st.textContent = 'Check the preview, then create the tree.';
+          $('iGo').disabled = false;
+        })
+        .catch(function (err) {
+          st.classList.add('err');
+          st.textContent = /Failed to fetch/i.test(err.message) ? 'No backend — start the server (./start.sh)' : err.message;
+        });
+    };
+    rd.onerror = function () { st.classList.add('err'); st.textContent = 'Could not read that file.'; };
+    rd.readAsDataURL(file);
+  }
+  function importedTreeData(topics) {
+    var n = 0, base = newId();
+    function id() { return base + '_' + (++n); }        // unique even when built in one millisecond
+    return JSON.stringify(topics.map(function (t) {
+      return { i: id(), k: 'topic', t: t.title, m: '4 min', c: false, ch: t.questions.map(function (q) {
+        return { i: id(), k: 'standard', t: q.text, c: false, ch: q.followups.map(function (f) {
+          return { i: id(), k: 'follow', t: f, c: false, ch: [] };
+        }) };
+      }) };
+    }));
+  }
+  $('iFile').addEventListener('change', function () { importFile(this.files[0]); });
+  var iDrop = $('iDrop');
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    iDrop.addEventListener(ev, function (e) { e.preventDefault(); iDrop.classList.add('over'); });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    iDrop.addEventListener(ev, function (e) { e.preventDefault(); iDrop.classList.remove('over'); });
+  });
+  iDrop.addEventListener('drop', function (e) { importFile(e.dataTransfer.files[0]); });
+  $('importModal').addEventListener('click', function (e) {
+    if (e.target === $('importModal') || e.target.closest('[data-xclose]')) $('importModal').hidden = true;
+  });
+  $('iGo').addEventListener('click', function () {
+    if (!IMP) return;
+    saveActive();
+    var id = newId();
+    FILES.push({ id: id, name: ($('iName').value || '').trim() || IMP.name, data: importedTreeData(IMP.topics), notes: [] });
+    loadFile(id); renderFileList();
+    $('importModal').hidden = true;
+  });
+
   /* ---------- boot ---------- */
   /* ================= files: multiple trees / blank pages (tldraw-style) ================= */
   var FILES = [], ACTIVE = null, filesTimer = null, BUILTIN = null;
@@ -2792,6 +3583,8 @@
     });
     html += '<div class="filenew" id="fileNew"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.5v9M3.5 8h9"/></svg>New blank tree</div>';
     html += '<div class="filenew" id="fileTpl"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3.5h6l3 3v6H3z"/><path d="M9 3.5v3h3"/></svg>Industrial-design CAD (template)</div>';
+    html += '<div class="filenew" id="fileImport"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 10.5v-8M4.5 6L8 2.5 11.5 6"/><path d="M3 12.5h10"/></svg>Import tree… (tldraw, Miro, Word, PDF, picture)</div>';
+    html += '<div class="filenew" id="fileExport"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 2.5v8M4.5 7L8 10.5 11.5 7"/><path d="M3 12.5h10"/></svg>Export document… (Word / PDF)</div>';
     list.innerHTML = html;
   }
   function openFileList() { renderFileList(); $('fileList').hidden = false; $('filemenu').classList.add('open'); }
@@ -2827,6 +3620,8 @@
       if (del) { e.stopPropagation(); deleteFile(del.dataset.del); return; }
       if (e.target.closest('#fileNew')) { newBlank(); return; }
       if (e.target.closest('#fileTpl')) { newFromTemplate(); return; }
+      if (e.target.closest('#fileExport')) { closeFileList(); openExport(); return; }
+      if (e.target.closest('#fileImport')) { closeFileList(); openImport(); return; }
       var fn = e.target.closest('.fn');
       if (fn && fn.getAttribute('contenteditable') === 'true') return;   // editing, don't switch
       var row = e.target.closest('.filerow');

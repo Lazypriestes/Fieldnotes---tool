@@ -23,3 +23,7 @@ diarization/pipeline.log
 # compiled SCK capture helper (built by diarization/capture/build.sh)
 diarization/capture/systemaudio
 diarization/capture/systemaudio.dSYM/
+diarization/capture/SystemAudio.app/
+
+# on-device OCR helper for the Import window (built from analysis/tools/ocr.swift on first use)
+analysis/tools/ocr

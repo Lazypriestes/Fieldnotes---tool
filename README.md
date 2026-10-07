@@ -51,10 +51,16 @@ Sources:
   the default, ideal for a quick demo.
 - **Microphone** — captures your mic (in-person interviews). First run asks macOS for mic
   permission.
+- **Call: me (mic) + them (system)** — the one to use for Teams/Zoom interviews. Records
+  your microphone and the call audio as two channels, so *who spoke* comes from the
+  channel (you = mic, them = system audio) — exact, and no diarization model runs.
+  Echo from your speakers into the mic is ignored; headphones still give the cleanest
+  result. First run asks for **Microphone** access for *Fieldnotes System Audio*.
 - **System audio (Teams)** — captures a Teams/Zoom call or any system audio with **no
-  loopback driver** and no output rerouting (volume keys keep working). Uses a
-  ScreenCaptureKit helper (`diarization/capture/`, built by `setup.sh`); first run asks
-  for **Screen Recording** permission for your terminal. The clean way to capture a call.
+  loopback driver** and no output rerouting (volume keys keep working). Uses a Core Audio
+  **process-tap** helper (`diarization/capture/`, built by `setup.sh`, macOS 14.4+); if
+  macOS prompts, allow audio recording for *Fieldnotes System Audio*. The clean way to
+  capture a call.
 - **A real call via BlackHole** (fallback) — `brew install blackhole-2ch`, then run the
   pipeline against your BlackHole/Aggregate device. More invasive; see `diarization/README.md`.
 
