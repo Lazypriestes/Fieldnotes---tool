@@ -10,43 +10,58 @@ the full pipeline under `sandbox-exec` with all network syscalls denied, which p
 byte-identical output. The only network access is the one-time model download below.
 
 ```
-audio ─▶ 1s chunks ─▶ Sortformer stream ─▶ merge into turns ─▶ CrisperWhisper ─▶ SQLite (WAL)
-                      (who spoke, when)      per speaker turn   or Whisper         │
-                          [GPU/MLX]                            (words) [GPU/MPS]    ▼
-                                                                    watch.py / server / LLM
+audio ─▶ who spoke, when ──────────────▶ speaker turns ─▶ Parakeet ─▶ SQLite (WAL)
+          • Nemotron-3-Diarization                          (words)     │
+            (default; up to 8 speakers)                     [GPU/MLX]   ▼
+          • Call mode: the CHANNEL (mic = you,                    canvas / watch.py / LLM
+            system audio = them) — no diarizer runs
+          • Sortformer v2.1 (--diarizer sortformer; the bundled sample)
 ```
 
-Diarization is **NVIDIA Sortformer**, a streaming neural diarizer running on the Apple
-Silicon GPU via MLX. One model does voice-activity, segmentation and speaker assignment —
-no threshold to tune, no cold-start, no guessing the speaker count (it handles up to 4),
-and it's robust to overlapping speech. This replaced an earlier voice-embedding +
-clustering diarizer (kept as `pipeline_embedding_backup.py`).
+> **Current defaults (2026-10).** Diarization: **NVIDIA Nemotron-3-Diarization** on MLX
+> (`--diarizer nemotron`, `--latency low|very_low|ultra_low`). Transcription: **Parakeet**
+> (`--engine parakeet`, CC-BY-4.0). Calls: `capture/systemaudio --with-mic` piped into
+> `--source stdin --channels 2` — the speaker comes from the channel, with an echo model
+> so speaker sound reaching the mic never counts as you (see `capture/README.md`).
+> Sections further down that describe Sortformer, CrisperWhisper or BlackHole as the
+> default are kept as reference for those optional paths.
 
-Transcription runs on the GPU via PyTorch/MPS and has two selectable engines (`--engine`):
+Diarization is **NVIDIA Nemotron-3-Diarization**, a streaming Sortformer-family model run on
+the Apple Silicon GPU via `mlx-audio`. One model does voice-activity, segmentation and
+speaker assignment for up to 8 speakers, with latency presets down to 0.32 s. The older
+**Sortformer v2.1** (4 speakers) is still available with `--diarizer sortformer`; it is used
+for the bundled sample, whose two synthetic voices are too alike for Nemotron. In **call
+mode** no diarizer is loaded at all — you and the other side arrive on separate channels.
 
-- **`crisper`** (default) — **CrisperWhisper**, a verbatim Whisper fine-tune. It keeps
-  fillers and false starts (`--mode verbatim`) or cleans them up (`--mode intended`), and
-  its word timestamps are tuned for disfluency. Needs a Nyra Health licence for commercial
-  use (see below).
+Transcription engines (`--engine`):
+
+- **`parakeet`** (default) — NVIDIA **Parakeet-TDT 0.6B v2** on MLX. Fast, memory-light,
+  word timestamps; CC-BY-4.0 (commercial use allowed).
+- **`crisper`** — **CrisperWhisper**, a verbatim Whisper fine-tune that keeps fillers and
+  false starts (`--mode verbatim|intended`). Needs a Nyra Health licence for commercial use.
 - **`whisper`** — **stock OpenAI Whisper** via HuggingFace transformers (`--whisper-model`,
-  default `openai/whisper-medium`). MIT-licensed, no verbatim disfluencies (so `--mode` is
-  ignored), same speed class. Pick this if the downstream consumer only needs clean text
-  and you want to avoid the CrisperWhisper licence.
-
-On the test sample CrisperWhisper edged out stock Whisper-medium at the same size — correct
-tense and pronoun ("moved"/"cached"/"you ran into") where Whisper-medium produced
-"move"/"cache"/"he ran into" and misheard "hardest problem" as "artist's problem". That's
-one short synthetic clip, though, not a benchmark — run both on your real audio before
-committing. Both GPUs are used at once — Sortformer on MLX-Metal, the transcriber on
-torch-MPS.
+  default `openai/whisper-medium`). MIT-licensed.
 
 ## Reference commands
 
 All of these are verified working on this machine. Run them from anywhere — paths resolve
 against the scripts, not your shell. `cd` into the project first if you prefer the short form.
 
-**Capture a video or a call.** No diarization tuning needed — Sortformer handles the
-speaker logic on its own:
+**Capture a call (Teams, Zoom…).** Your mic and the call audio on two channels — no
+BlackHole, no diarization tuning:
+
+```bash
+capture/systemaudio --with-mic | .venv/bin/python pipeline.py --reset --source stdin --channels 2 --names "Interviewer,Candidate"
+```
+
+**Capture any system audio** (a video, a call with several people on the other side),
+diarized by Nemotron:
+
+```bash
+capture/systemaudio | .venv/bin/python pipeline.py --reset --source stdin --names "Interviewer,Candidate"
+```
+
+The BlackHole route still works as a fallback:
 
 ```bash
 .venv/bin/python pipeline.py --reset --source device --device "BlackHole 2ch" --names "Interviewer,Candidate"
