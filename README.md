@@ -47,25 +47,30 @@ That serves the app and opens **http://localhost:8000**. Then:
 - **▶ play** — canned demo, no backend needed.
 - **◉ go live** — pick a source in the little dropdown and click ◉. The server **starts
   diarization for you** (no second terminal) and the canvas fills from the real transcript
-  + LLM coverage. Click ◉ again (or ▪ stop) to end it — the pipeline stops too.
+  + LLM coverage. Click ◉ again (or ■ stop) to end it — the pipeline stops too.
 
-Sources:
-- **Sample** — streams `sample_interview.wav` at real time, like a live call. Zero setup;
-  the default, ideal for a quick demo.
-- **Microphone** — captures your mic (in-person interviews). First run asks macOS for mic
-  permission.
-- **Call: me (mic) + them (system)** — the one to use for Teams/Zoom interviews. Records
-  your microphone and the call audio as two channels, so *who spoke* comes from the
-  channel (you = mic, them = system audio) — exact, and no diarization model runs.
-  Echo from your speakers into the mic is ignored; headphones still give the cleanest
-  result. First run asks for **Microphone** access for *Fieldnotes System Audio*.
-- **System audio (Teams)** — captures a Teams/Zoom call or any system audio with **no
-  loopback driver** and no output rerouting (volume keys keep working). Uses a Core Audio
-  **process-tap** helper (`diarization/capture/`, built by `setup.sh`, macOS 14.4+); if
-  macOS prompts, allow audio recording for *Fieldnotes System Audio*. The clean way to
-  capture a call.
-- **A real call via BlackHole** (fallback) — `brew install blackhole-2ch`, then run the
-  pipeline against your BlackHole/Aggregate device. More invasive; see `diarization/README.md`.
+Sources (the app remembers your last choice):
+- **Online call (me + Teams)** — the one for Teams/Zoom interviews. Records your microphone
+  and the call audio as two channels, so *who spoke* comes from the channel (you = mic,
+  them = the call) — exact, and no diarization model runs. Echo from your speakers into the
+  mic is ignored; headphones still give the cleanest result. A second dropdown covers a
+  **second interviewer**: *in the room* (your mic is split between the two of you) or *on
+  the call* (the call side is split; the remote voice that talks most is the Candidate).
+  The **Speakers** button on the live bar shows who was heard and lets you rename anyone.
+  No loopback driver, no output rerouting (Core Audio process tap, macOS 14.4+). First run
+  asks for **Microphone** access for *Fieldnotes System Audio*.
+- **In person (microphone)** — everyone in one room, no call: Nemotron separates every
+  voice on the one mic.
+- **Listen only (Teams, no mic)** — just the call side, e.g. when you only observe or are
+  recording a webinar. Your own voice is not captured.
+- **Sample demo** — streams `sample_interview.wav` at real time, like a live call. Only this
+  source shows the ▶ / ⏸ buttons, which run the scripted demo.
+- **BlackHole** (fallback, command line only) — `brew install blackhole-2ch`, then run the
+  pipeline against your BlackHole/Aggregate device; see `diarization/README.md`.
+
+**Interview session** (tree menu, or the save button by ◉): a live interview is saved to
+`sessions/` every 10 s and when you stop. You can download it as one file, open a file or a
+saved session again, and if the page reloads mid-interview, **resume** where you left off.
 
 Press **?** in the app for a full controls cheat-sheet.
 

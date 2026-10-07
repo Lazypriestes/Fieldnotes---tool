@@ -39,14 +39,17 @@ Logs go to **stderr**; stdout is data only.
 ## Call mode (`--with-mic`)
 Emits **2 channels** — `[microphone, system]` interleaved, 16 kHz float32 — instead of mono.
 `pipeline.py --channels 2` then takes the speaker from the channel (mic = you, system =
-them) and skips the diarizer entirely. Whenever the system channel is active it wins, so
-speaker echo picked up by the mic never counts as you. Needs Microphone access for
-*Fieldnotes System Audio*.
+them) and skips the diarizer entirely. An echo model (learned speaker-to-mic level, plus a
+loudness-rhythm check) keeps speaker echo picked up by the mic from counting as you. With
+`--split mic|system` one Nemotron model also tells apart several people on a channel (a
+second interviewer in the room or on the call). Needs Microphone access for *Fieldnotes
+System Audio*.
 
 ## In the app
 `analysis/assistant.py` launches `systemaudio | pipeline --source stdin` when the ◉ source
-dropdown is set to **"System audio (Teams)"**. If the helper isn't built, that source
-reports an error and Sample/Microphone still work.
+dropdown is set to **"Listen only (Teams, no mic)"**, and `systemaudio --with-mic | pipeline
+--source stdin --channels 2` for **"Online call (me + Teams)"**. If the helper isn't built, those two
+sources report an error; *In person (microphone)* and *Sample demo* still work.
 
 ## Swapping the method later
 - Different capturer? Emit the contract above and pipe it into `pipeline.py --source stdin`.

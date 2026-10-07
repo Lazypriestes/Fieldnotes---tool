@@ -781,9 +781,10 @@
         <button id="pauseBtn" title="Pause" aria-label="Pause" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="3" width="3" height="10" rx="1" fill="currentColor"/><rect x="9" y="3" width="3" height="10" rx="1" fill="currentColor"/></svg></button>
         <span class="tsep"></span>
         <select id="srcSel" class="srcSel" title="Live audio source">
-          <option value="sample">Sample</option>
-          <option value="device">Microphone</option>
-          <option value="call">Call: me (mic) + them (system)</option><option value="system">System audio (Teams)</option>
+          <option value="call" title="Teams / Zoom interview: your mic + the call audio">Online call (me + Teams)</option>
+          <option value="device" title="Everyone in one room, no call">In person (microphone)</option>
+          <option value="system" title="Only the call side, e.g. you just observe">Listen only (Teams, no mic)</option>
+          <option value="sample" title="Built-in demo recording">Sample demo</option>
         </select>
         <select id="iv2Sel" class="srcSel" title="A second interviewer?" hidden>
           <option value="none">1 interviewer</option>
@@ -3796,7 +3797,8 @@
     runBtn.hidden = !live && src !== 'sample';
     if (!live || liveReal) pauseBtn.hidden = true;
   }
-  $('srcSel').addEventListener('change', syncTransport);
+  try { var lastSrc = localStorage.getItem('fn.src'); if (lastSrc && $('srcSel').querySelector('option[value="' + lastSrc + '"]')) $('srcSel').value = lastSrc; } catch (_e) {}
+  $('srcSel').addEventListener('change', function () { try { localStorage.setItem('fn.src', this.value); } catch (_e) {} syncTransport(); });
   try { var iv2 = localStorage.getItem('fn.iv2'); if (iv2) $('iv2Sel').value = iv2; } catch (_e) {}
   $('iv2Sel').addEventListener('change', function () { try { localStorage.setItem('fn.iv2', this.value); } catch (_e) {} });
 
