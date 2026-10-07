@@ -3281,21 +3281,41 @@
     el.addEventListener('click', function (ev) { ev.stopPropagation(); seekIdx(m.idx, true); });
     $('tlTrack').appendChild(el); m.el = el; userMarks.push(m);
     updateTL();
+    return m;
   }
   function addQuestion() {
     composer('QUESTION', 'q', 'Type a question to slot into the sequence', function (text, idx) {
-      var host = INDEX[current], topicNode = host ? topicOf(host) : topics()[0];
-      var anchor = host; while (anchor && anchor.depth > 1) anchor = anchor.parent;   // depth-1 node in the lineage
-      var pos = (anchor && anchor.parent === topicNode) ? topicNode.children.indexOf(anchor) + 1 : undefined;
-      var q = mk({ kind: 'standard', depth: 1, text: text, collapsed: false, added: true });
-      attach(topicNode, q, pos);
-      renumber(); layout(); buildSpine();
-      if (q.el) q.el.classList.add('qadded');
-      if (live) { state[q.id] = 'green'; q.el.dataset.s = 'green'; coverage(); }   // it's covered — you just asked it
-      addQMark(idx, text);
-      select(q.id, false);
+      if (VIEWER) {
+        // the tree lives on the recording computer: ask it to insert the question; it comes
+        // back to this page with the next tree update (a couple of seconds)
+        fetch(API + '/api/shared/event', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind: 'question', uid: newUid(), data: { text: text, idx: idx, host: current, by: ME } }) }).catch(function () {});
+        addQMark(idx, text);
+        notifyQuestion(text, idx);
+        return;
+      }
+      insertQuestion(text, idx, current);
       notifyQuestion(text, idx);
     });
+  }
+  // put an asked-on-the-fly question into the tree after the one being asked (hostId)
+  function insertQuestion(text, idx, hostId, from) {
+    var host = INDEX[hostId], topicNode = host ? topicOf(host) : topics()[0];
+    var anchor = host; while (anchor && anchor.depth > 1) anchor = anchor.parent;   // depth-1 node in the lineage
+    var pos = (anchor && anchor.parent === topicNode) ? topicNode.children.indexOf(anchor) + 1 : undefined;
+    pushHistory();                                   // saves the tree (and publishes it while live)
+    var q = mk({ kind: 'standard', depth: 1, text: text, collapsed: false, added: true });
+    attach(topicNode, q, pos);
+    renumber(); layout(); buildSpine();
+    if (q.el) q.el.classList.add('qadded');
+    if (live) {                                      // it's covered — it was just asked
+      state[q.id] = 'green'; q.el.dataset.s = 'green'; coverage();
+      if (STEPS[idx]) { STEPS[idx].mark = STEPS[idx].mark || []; STEPS[idx].mark.push([q.id, 'green']); }   // survives rebuilds & sessions
+    }
+    var m = addQMark(idx, text);
+    if (m && from) { m.from = from; if (m.el) m.el.classList.add('shared'); }
+    if (!from) select(q.id, false);
+    return q;
   }
   var qnoteTimer = null;
   function notifyQuestion(text, idx) {
@@ -3942,6 +3962,14 @@
       }
       c.startMs = v.startMs; c.endMs = v.endMs; c.reaction = v.reaction || 0; c.notes = (v.notes || []).slice();
       renderRecBadge(c); updateTL();
+    } else if (ev.kind === 'question') {
+      if (!VIEWER && !LIVE.qSeen) LIVE.qSeen = {};
+      var already = NODES.some(function (n) { return n.added && n.text === v.text; });   // e.g. after a reload
+      if (!VIEWER && !LIVE.qSeen[ev.uid] && !already) {  // only the recording computer edits the tree
+        LIVE.qSeen[ev.uid] = 1;
+        insertQuestion(v.text, v.idx, v.host, who);
+        notifyQuestion(v.text + '  (from the ' + who + ')', v.idx);
+      }
     } else if (ev.kind === 'note') {
       var m = userMarks.filter(function (x) { return x.uid === ev.uid; })[0];
       if (!m) addUserMark(v.idx, v.text, { uid: ev.uid, from: who, host: v.host, quiet: true });

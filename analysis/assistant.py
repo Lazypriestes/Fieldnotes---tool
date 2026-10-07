@@ -733,7 +733,7 @@ class Handler(BaseHTTPRequestHandler):
             # {kind: "clip"|"note", uid, data} from either interviewer, for the other to pick up
             data = self._body()
             kind, uid = data.get("kind"), str(data.get("uid") or "")[:40]
-            if kind not in ("clip", "note") or not uid or not isinstance(data.get("data"), dict):
+            if kind not in ("clip", "note", "question") or not uid or not isinstance(data.get("data"), dict):
                 return self._json({"ok": False, "error": "bad event"}, 400)
             session = self._current_session()
             with LOCK:

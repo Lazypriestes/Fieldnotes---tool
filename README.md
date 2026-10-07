@@ -74,6 +74,34 @@ saved session again, and if the page reloads mid-interview, **resume** where you
 
 Press **?** in the app for a full controls cheat-sheet.
 
+## Two interviewers on two computers
+
+One computer records (it has the mic and the call audio); the second interviewer follows
+along on their own computer:
+
+```bash
+./start.sh --share
+```
+
+The terminal prints a join link with a 6-character code, e.g.
+`http://192.168.0.251:8000/?join=YG99F9`. Send it to the second interviewer — they open it in
+a browser (same Wi-Fi, or both on [Tailscale](https://tailscale.com) when you're in different
+places; don't expose it to the open internet). Their page:
+
+- shows **your question tree** and follows the interview live: transcript, coverage, who's
+  speaking, off the record
+- has no recording controls — starting, stopping and going off the record stay with you
+- **shares notes, R clips (with reactions and clip notes) and added questions both ways**;
+  the other person's appear in purple
+- keeps the transcript readable and exportable after you stop
+
+Without `--share` the server only answers this Mac. A new code is made every time you start;
+Ctrl-C ends sharing. Saved interviews stay on the recording computer.
+
+Microphone setup when both interviewers are on the same call: pick **Online call** and
+*+1 interviewer on the call* (the second interviewer's voice comes through Teams); if you
+sit together, pick *+1 interviewer in the room*.
+
 ## What you can do
 
 - **Question tree** — edit it on the canvas (**E**); several trees in the tree menu (top left).
