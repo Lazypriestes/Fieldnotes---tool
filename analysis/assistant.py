@@ -50,6 +50,8 @@ OLLAMA_URL = "http://localhost:11434/api/chat"
 SHARE = {"code": None}
 HOST_ONLY_POST = {"/api/start", "/api/stop", "/api/pause", "/api/plan", "/api/session/save", "/api/shared/tree"}
 SHARED_TREE = {"version": 0, "name": None, "data": None, "notes": []}   # the host's tree, for viewers
+# notes and R clips both interviewers make during the current interview (upserted by uid)
+SHARED_EVENTS = {"session": None, "items": []}
 HOST_ONLY_GET = {"/api/sessions", "/api/session"}
 SESS_DIR = os.path.join(ROOT, "sessions")                # autosaved interview sessions (gitignored)
 CAPTURE = os.path.join(DIAR, "capture", "systemaudio")   # optional SCK helper (built separately)
@@ -571,6 +573,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _current_session(self):
+        try:
+            conn = read_only(self.db_path)
+            try:
+                return latest_session(conn)
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            return None
+
     def _cookie(self, name):
         for part in (self.headers.get("Cookie") or "").split(";"):
             k, _, v = part.strip().partition("=")
@@ -643,7 +655,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         url = urlparse(self.path)
-        if not self._gate(url, "POST"):
+        role = self._gate(url, "POST")
+        if not role:
             return
         if url.path == "/api/plan":
             data = self._body()
@@ -715,6 +728,22 @@ class Handler(BaseHTTPRequestHandler):
                     SPEAKER_OVERRIDES["map"][raw] = name
                 else:
                     SPEAKER_OVERRIDES["map"].pop(raw, None)
+            return self._json({"ok": True})
+        if url.path == "/api/shared/event":
+            # {kind: "clip"|"note", uid, data} from either interviewer, for the other to pick up
+            data = self._body()
+            kind, uid = data.get("kind"), str(data.get("uid") or "")[:40]
+            if kind not in ("clip", "note") or not uid or not isinstance(data.get("data"), dict):
+                return self._json({"ok": False, "error": "bad event"}, 400)
+            session = self._current_session()
+            with LOCK:
+                if SHARED_EVENTS["session"] != session:
+                    SHARED_EVENTS.update(session=session, items=[])
+                items = SHARED_EVENTS["items"]
+                nid = items[-1]["id"] + 1 if items else 1        # monotonic, even after trimming
+                items.append({"id": nid, "kind": kind, "uid": uid, "from": role, "data": data["data"]})
+                if len(items) > 2000:
+                    del items[: len(items) - 2000]
             return self._json({"ok": True})
         if url.path == "/api/shared/tree":
             # the recording computer publishes the tree it is interviewing from
@@ -834,6 +863,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": True, "data": json.load(f)})
             except (ValueError, OSError) as e:
                 return self._json({"ok": False, "error": f"no such session ({e})"}, 404)
+        if url.path == "/api/shared/events":
+            after, session = self._after(url), self._current_session()
+            with LOCK:
+                if SHARED_EVENTS["session"] != session:
+                    SHARED_EVENTS.update(session=session, items=[])
+                evs = [e for e in SHARED_EVENTS["items"] if e["id"] > after]
+            return self._json({"session": session, "events": evs})
         if url.path == "/api/shared/tree":
             with LOCK:
                 t = dict(SHARED_TREE)

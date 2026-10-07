@@ -399,6 +399,9 @@
   /* second interviewer (viewer) */
   .app.viewer #liveBtn,.app.viewer #srcSel,.app.viewer #iv2Sel,.app.viewer #runBtn,.app.viewer #pauseBtn,
   .app.viewer .dbtn[data-act="edit"]{display:none!important}
+  /* the other interviewer's notes and clips */
+  .tl-rec.shared{background:#8B5CF6!important;opacity:.8}
+  .tl-mark.user.shared{background:#8B5CF6!important}
   /* off the record */
   .tl-off{position:absolute;border-radius:3px;pointer-events:auto;z-index:1;opacity:.85;
     background:repeating-linear-gradient(135deg,#B9B29A 0 4px,#E7E2D2 4px 8px)}
@@ -2788,7 +2791,7 @@
 
   function enterLiveView(label) {
     live = true; liveReal = true; LIVE.on = true; LIVE.restored = false; LIVE.attached = false;
-    LIVE.covSession = null;
+    LIVE.covSession = null; LIVE.lastEv = 0; LIVE.evSession = undefined;
     LIVE.off = false; LIVE.offSpans = []; if (LIVE.offTimer) { clearInterval(LIVE.offTimer); LIVE.offTimer = null; }
     pauseBtn.innerHTML = ICON_PAUSE; pauseBtn.classList.remove('on');
     pauseBtn.title = 'Off the record — stop transcribing until you resume';
@@ -2837,6 +2840,7 @@
     }).catch(function () {
       if (++LIVE.fails === 3) { var rec = caps.querySelector('.rec'); if (rec) rec.textContent = 'No backend at ' + (API || 'this origin') + ' — start assistant.py'; }
     });
+    pollShared();
     fetch(API + '/api/coverage?after=' + LIVE.lastCov).then(function (r) { return r.json(); }).then(function (d) {
       if (!d.events) return;
       // Coverage numbering restarts for every interview. Only use events for the interview
@@ -3213,13 +3217,16 @@
     composer('EDIT NOTE', '', 'Edit this note', function (t) {
       m.text = t;
       if (m.wnode) m.wnode.querySelector('.wn-tx').textContent = t;
+      shareItem('note', m);
     }, m.text);
   }
-  function addUserMark(idx, text) {
-    var m = { idx: clamp(idx, 0, Math.max(0, liveIdx)), text: text, host: current };   // host: the question it belongs to
+  function addUserMark(idx, text, opt) {
+    opt = opt || {};
+    var m = { idx: clamp(idx, 0, Math.max(0, liveIdx)), text: text, host: opt.host !== undefined ? opt.host : current,   // host: the question it belongs to
+              uid: opt.uid || newUid(), from: opt.from || null };
     var dot = document.createElement('button');
-    dot.className = 'tl-mark user';
-    attachTip(dot, function () { return 'YOUR NOTE · ' + fmtTime(timeAtIdx(m.idx)) + ' · click to edit'; }, function () { return m.text; });
+    dot.className = 'tl-mark user' + (m.from ? ' shared' : '');
+    attachTip(dot, function () { return (m.from ? 'NOTE FROM THE OTHER INTERVIEWER · ' : 'YOUR NOTE · ') + fmtTime(timeAtIdx(m.idx)) + ' · click to edit'; }, function () { return m.text; });
     dot.addEventListener('click', function (ev) { ev.stopPropagation(); editUserMark(m); });
     $('tlTrack').appendChild(dot); m.el = dot; userMarks.push(m);
     // drop a note card into the sequence where we are — visible only on the mind-map page
@@ -3234,6 +3241,8 @@
       world.appendChild(wn); m.wnode = wn;
     }
     updateTL();
+    if (!opt.quiet) shareItem('note', m);
+    return m;
   }
   function composer(label, cls, ph, onDone, initial) {
     if (!live) return;
@@ -3326,7 +3335,9 @@
     var s = recSpan; recSpan = null;
     s.endMs = Math.max(recNow(), s.pressMs + (Date.now() - s.pressedAt));   // ends exactly at release
     s.el.classList.remove('live');
+    s.uid = newUid();
     armClip(s);
+    shareItem('clip', s);
     updateTL();
     if ($('rater').classList.contains('active')) startRaterTimeout();   // 3s to pick a reaction, else dismiss
   }
@@ -3378,6 +3389,7 @@
     var s = rateTarget;
     if (n === 'note') { hideRater(); addClipNote(s); return; }
     s.reaction = n; renderRecBadge(s); hideRater(); updateTL();
+    shareItem('clip', s);
   }
   $('rater').addEventListener('click', function (e) {
     var b = e.target.closest('[data-rate]');
@@ -3399,7 +3411,7 @@
     function done() {
       tx.removeEventListener('blur', done);
       var t = tx.textContent.trim();
-      if (t) { s.notes.push(t); renderRecBadge(s); updateTL(); }
+      if (t) { s.notes.push(t); renderRecBadge(s); updateTL(); shareItem('clip', s); }
       card.classList.add('out'); setTimeout(function () { card.remove(); }, 260);
     }
     tx.addEventListener('blur', done);
@@ -3679,8 +3691,8 @@
         return { w: e.w, raw: e.raw || null, t: e.t, a: !!e.a, tStart: e.tStart, tEnd: e.tEnd, seg_id: e.seg_id,
                  mark: e.mark || [], notes: e.notes || [], anno: e.anno || [], cur: e.cur || null };
       }),
-      clips: redSpans.map(function (c) { return { startMs: c.startMs, endMs: c.endMs, reaction: c.reaction || 0, notes: (c.notes || []).slice() }; }),
-      marks: userMarks.map(function (m) { return { idx: m.idx, text: m.text, host: m.host || null, q: !!m.q }; }),
+      clips: redSpans.map(function (c) { return { startMs: c.startMs, endMs: c.endMs, reaction: c.reaction || 0, notes: (c.notes || []).slice(), uid: c.uid || null, from: c.from || null }; }),
+      marks: userMarks.map(function (m) { return { idx: m.idx, text: m.text, host: m.host || null, q: !!m.q, uid: m.uid || null, from: m.from || null }; }),
       offRecord: (LIVE.offSpans || []).map(function (o) { return { startMs: o.startMs, endMs: o.endMs != null ? o.endMs : o.pressMs + (Date.now() - o.pressedAt) }; }),
       current: current || null, tbase: TBASE, lastSeg: LIVE.lastSeg, lastCov: LIVE.lastCov,
       duration: n ? fmtTime(TBASE + (cumEnd[n - 1] || 0) / 1000) : '00:00'
@@ -3754,13 +3766,14 @@
     computeTimeline();
     liveIdx = viewIdx = STEPS.length - 1;
     (d.clips || []).forEach(function (c) {
-      var clip = { startMs: c.startMs, endMs: c.endMs, reaction: c.reaction || 0, notes: (c.notes || []).slice(), el: document.createElement('button') };
-      clip.el.className = 'tl-rec'; $('tlTrack').appendChild(clip.el);
+      var clip = { startMs: c.startMs, endMs: c.endMs, reaction: c.reaction || 0, notes: (c.notes || []).slice(),
+                   uid: c.uid || newUid(), from: c.from || null, el: document.createElement('button') };
+      clip.el.className = 'tl-rec' + (clip.from ? ' shared' : ''); $('tlTrack').appendChild(clip.el);
       armClip(clip); renderRecBadge(clip);
     });
     (d.marks || []).forEach(function (m) {
       if (m.q) addQMark(m.idx, m.text);
-      else { addUserMark(m.idx, m.text); userMarks[userMarks.length - 1].host = m.host; }
+      else addUserMark(m.idx, m.text, { host: m.host, uid: m.uid, from: m.from, quiet: true });
     });
     (d.offRecord || []).forEach(function (o) {
       var el = document.createElement('div'); el.className = 'tl-off'; el.title = 'Off the record';
@@ -3897,6 +3910,44 @@
     });
     applySpeakerNames(list);
   });
+
+  /* ---------- shared notes and R clips (both interviewers) ----------
+     Every note / clip / reaction / clip note is posted to the server's log for this interview;
+     each page applies the other's items (matched by uid, so later changes update in place). */
+  var ME = Math.random().toString(36).slice(2, 7);       // this page; ignores its own echoes
+  function newUid() { return (VIEWER ? 'v' : 'h') + ME + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
+  function shareItem(kind, o) {
+    if (!liveReal || !o.uid || (LIVE.restored && !LIVE.attached)) return;
+    var data = kind === 'clip'
+      ? { startMs: o.startMs, endMs: o.endMs, reaction: o.reaction || 0, notes: (o.notes || []).slice(), by: ME }
+      : { idx: o.idx, text: o.text, host: o.host || null, by: ME };
+    fetch(API + '/api/shared/event', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: kind, uid: o.uid, data: data }) }).catch(function () {});
+  }
+  function pollShared() {
+    fetch(API + '/api/shared/events?after=' + (LIVE.lastEv || 0)).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.session !== LIVE.evSession) { LIVE.evSession = d.session; LIVE.lastEv = 0; return; }   // new interview
+      (d.events || []).forEach(applySharedEvent);
+      if (d.events && d.events.length) LIVE.lastEv = d.events[d.events.length - 1].id;
+    }).catch(function () {});
+  }
+  function applySharedEvent(ev) {
+    if (ev.data && ev.data.by === ME) return;                              // my own change coming back
+    var who = ev.from === 'viewer' ? 'second interviewer' : 'recording computer', v = ev.data;
+    if (ev.kind === 'clip') {
+      var c = redSpans.filter(function (x) { return x.uid === ev.uid; })[0];
+      if (!c) {
+        c = { uid: ev.uid, from: who, startMs: v.startMs, endMs: v.endMs, reaction: 0, notes: [], el: document.createElement('button') };
+        c.el.className = 'tl-rec shared'; $('tlTrack').appendChild(c.el); armClip(c);
+      }
+      c.startMs = v.startMs; c.endMs = v.endMs; c.reaction = v.reaction || 0; c.notes = (v.notes || []).slice();
+      renderRecBadge(c); updateTL();
+    } else if (ev.kind === 'note') {
+      var m = userMarks.filter(function (x) { return x.uid === ev.uid; })[0];
+      if (!m) addUserMark(v.idx, v.text, { uid: ev.uid, from: who, host: v.host, quiet: true });
+      else { m.text = v.text; if (m.wnode) m.wnode.querySelector('.wn-tx').textContent = v.text; }
+    }
+  }
 
   /* ================= share mode: the second interviewer's view =========================
      With ./start.sh --share, another computer can open the join link. Its page asks the server
