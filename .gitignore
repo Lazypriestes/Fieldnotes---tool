@@ -27,3 +27,6 @@ diarization/capture/SystemAudio.app/
 
 # on-device OCR helper for the Import window (built from analysis/tools/ocr.swift on first use)
 analysis/tools/ocr
+
+# autosaved interview sessions (local, may contain transcripts)
+sessions/

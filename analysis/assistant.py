@@ -39,6 +39,7 @@ SAMPLE = os.path.join(DIAR, "sample_interview.wav")
 OLLAMA_URL = "http://localhost:11434/api/chat"
 
 # ---- diarization pipeline as a managed subprocess -----------------------
+SESS_DIR = os.path.join(ROOT, "sessions")                # autosaved interview sessions (gitignored)
 CAPTURE = os.path.join(DIAR, "capture", "systemaudio")   # optional SCK helper (built separately)
 PIPE = None                                              # pipeline Popen, or None
 CAP = None                                               # capture-helper Popen, or None
@@ -397,6 +398,58 @@ def llm_json(model, system, user):
             return json.loads(json.load(r)["message"]["content"])
 
 
+# ---- interview sessions: autosave log + reopen ---------------------------------------
+def _sess_id(raw):
+    sid = re.sub(r"[^A-Za-z0-9_-]", "", str(raw or ""))[:64]
+    if not sid:
+        raise ValueError("bad session id")
+    return sid
+
+
+def save_session(db, sid, data):
+    """Write sessions/<sid>.json atomically. The transcript as the server holds it (the
+    SQLite segments of the pipeline session) is stored alongside the canvas's own state."""
+    os.makedirs(SESS_DIR, exist_ok=True)
+    data["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    try:
+        conn = read_only(db)
+        try:
+            if data.get("session_id") and data["session_id"] == latest_session(conn):
+                rows = conn.execute("SELECT id, t_start, t_end, speaker, text FROM segments "
+                                    "WHERE session_id=? ORDER BY id", (data["session_id"],)).fetchall()
+                data["server_segments"] = [dict(zip(("id", "t_start", "t_end", "speaker", "text"), r)) for r in rows]
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        pass
+    path = os.path.join(SESS_DIR, sid + ".json")
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f)
+    os.replace(tmp, path)
+    return data["saved_at"]
+
+
+def list_sessions():
+    out = []
+    if not os.path.isdir(SESS_DIR):
+        return out
+    for fn in os.listdir(SESS_DIR):
+        if not fn.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(SESS_DIR, fn)) as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            continue
+        out.append({"id": fn[:-5], "name": (d.get("tree") or {}).get("name") or "Interview",
+                    "saved_at": d.get("saved_at"), "src": d.get("src"),
+                    "session_id": d.get("session_id"), "lines": len(d.get("steps") or []),
+                    "duration": d.get("duration"), "clips": len(d.get("clips") or [])})
+    out.sort(key=lambda x: x.get("saved_at") or "", reverse=True)
+    return out
+
+
 def read_only(db):
     return sqlite3.connect(f"file:{db}?mode=ro", uri=True)
 
@@ -534,6 +587,16 @@ class Handler(BaseHTTPRequestHandler):
             out = [ollama_anonymize(self.model, t) if isinstance(t, str) else None
                    for t in texts[:12]]
             return self._json({"ok": True, "texts": out})
+        if url.path == "/api/session/save":
+            data = self._body()
+            try:
+                sid = _sess_id(data.get("id"))
+                saved = save_session(self.db_path, sid, data.get("data") or {})
+                return self._json({"ok": True, "id": sid, "saved_at": saved})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except OSError as e:
+                return self._json({"ok": False, "error": f"could not save: {e}"}, 500)
         if url.path == "/api/export":
             data = self._body()
             try:
@@ -613,8 +676,18 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 events = [e for e in COVERAGE if e["id"] > after]
                 has_plan = bool(PLAN["by_id"])
-            return self._json({"has_plan": has_plan, "events": events})
+                session = STATE["session"]          # which interview these events belong to
+            return self._json({"has_plan": has_plan, "session": session, "events": events})
 
+        if url.path == "/api/sessions":
+            return self._json({"ok": True, "sessions": list_sessions()})
+        if url.path == "/api/session":
+            try:
+                sid = _sess_id(parse_qs(url.query).get("id", [""])[0])
+                with open(os.path.join(SESS_DIR, sid + ".json")) as f:
+                    return self._json({"ok": True, "data": json.load(f)})
+            except (ValueError, OSError) as e:
+                return self._json({"ok": False, "error": f"no such session ({e})"}, 404)
         if url.path == "/api/status":
             running = bool(PIPE and PIPE.poll() is None)
             if not running and PIPE_INFO["running"]:

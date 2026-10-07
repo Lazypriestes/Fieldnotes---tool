@@ -396,6 +396,22 @@
   .xbtn{font:inherit;font-size:12.5px;padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
   .xbtn.primary{background:var(--ink);border-color:var(--ink);color:var(--surface)}
   .xbtn:disabled{opacity:.5;cursor:wait}
+  /* session window */
+  .sstat{font-size:12.5px;line-height:1.5;margin:0 0 12px;padding:8px 10px;border-radius:8px;background:var(--hair)}
+  .sstat.live{background:rgba(78,154,107,.12)}
+  .sstat.resume{background:rgba(216,154,60,.16)}
+  .sbtns{display:flex;gap:8px;margin-bottom:14px}
+  .sbtns label.xbtn{display:inline-flex;align-items:center}
+  .shd{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.08em;color:var(--muted);margin-bottom:6px}
+  .slist{max-height:32vh;overflow:auto;border:1px solid var(--hair);border-radius:8px;margin-bottom:12px}
+  .slist .srec{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--hair);font-size:12.5px}
+  .slist .srec:last-child{border-bottom:none}
+  .slist .srec .sn{flex:1;min-width:0}
+  .slist .srec .sn b{font-weight:600}
+  .slist .srec .sm{display:block;font-size:11px;color:var(--muted)}
+  .slist .srec.running{background:rgba(216,154,60,.10)}
+  .slist .empty{padding:10px;color:var(--faint);font-style:italic;font-size:12px}
+  #sessBtn.saved{color:#4E9A6B}
   /* import window */
   .idrop{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;cursor:pointer;
     border:1.5px dashed var(--line);border-radius:10px;padding:20px 14px;margin-bottom:12px;color:var(--muted)}
@@ -757,6 +773,7 @@
           <option value="call">Call: me (mic) + them (system)</option><option value="system">System audio (Teams)</option>
         </select>
         <button id="liveBtn" title="Go live — starts diarization" aria-label="Connect live"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3.4" fill="currentColor"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".55"/></svg></button>
+        <button id="sessBtn" title="Interview session — autosave log, download, open" aria-label="Interview session"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 2.5h8l2.5 2.5v8.5H3z"/><path d="M5.5 2.5v3.5h5V2.5M5.5 13.5V9.5h5v4"/></svg></button>
       </div>
 
       <div class="zoomctl">
@@ -808,6 +825,19 @@
           <label class="xfld" id="iNameRow" hidden><span>Name</span><input id="iName" type="text" spellcheck="false"></label>
           <div class="xfoot"><span class="xstatus" id="iStatus"></span><span class="sp"></span>
             <button class="xbtn" data-xclose>Cancel</button><button class="xbtn primary" id="iGo" disabled>Create tree</button></div>
+        </div>
+      </div>
+      <div class="xmodal" id="sessModal" hidden role="dialog" aria-modal="true" aria-labelledby="sTitleLbl">
+        <div class="xcard">
+          <div class="xhd"><span id="sTitleLbl">Interview session</span><span class="sp"></span><button class="xclose" data-xclose aria-label="Close">×</button></div>
+          <div class="sstat" id="sStat"></div>
+          <div class="sbtns">
+            <button class="xbtn" id="sDown">Download session file</button>
+            <label class="xbtn">Open session file…<input type="file" id="sFile" accept=".json,application/json" hidden></label>
+          </div>
+          <div class="shd">SAVED ON THIS MAC</div>
+          <div class="slist" id="sList"></div>
+          <div class="xfoot"><span class="xstatus" id="sMsg"></span><span class="sp"></span><button class="xbtn" data-xclose>Close</button></div>
         </div>
       </div>
       <div class="toasts" id="toasts"></div>
@@ -959,7 +989,7 @@
 
   /* ---------- history ---------- */
   var undoStack = [], redoStack = [];
-  function ser(n) { return { i: n.id, k: n.kind, t: n.text, m: n.mins, c: n.collapsed, cu: n.cues, ak: n.asks, ch: n.children.map(ser) }; }
+  function ser(n) { return { i: n.id, k: n.kind, t: n.text, m: n.mins, c: n.collapsed, cu: n.cues, ak: n.asks, ad: n.added || undefined, ch: n.children.map(ser) }; }
   function snap() { return JSON.stringify(ROOT.children.map(ser)); }
   function pushHistory(before) {
     undoStack.push(before === undefined ? snap() : before);
@@ -971,6 +1001,7 @@
     var n = attach(parent, mk({ id: d.i, kind: d.k, depth: parent.depth + 1, text: d.t, mins: d.m, collapsed: d.c }));
     if (d.cu) n.cues = d.cu;
     if (d.ak) n.asks = d.ak;
+    if (d.ad) n.added = true;
     d.ch.forEach(function (c) { rebuild(c, n); });
     return n;
   }
@@ -1059,7 +1090,7 @@
   function ensureEl(n) {
     if (n.el) return;
     var el = document.createElement('div');
-    el.className = 'node ' + (n.kind === 'fprobe' ? 'follow probe' : n.kind === 'probe' ? 'probe' : n.kind);
+    el.className = 'node ' + (n.kind === 'fprobe' ? 'follow probe' : n.kind === 'probe' ? 'probe' : n.kind) + (n.added ? ' qadded' : '');
     el.dataset.id = n.id;
     el.tabIndex = 0;
     el.style.width = W[n.depth] + 'px';
@@ -2695,7 +2726,16 @@
       return fetch(API + '/api/start', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source: src }) });
     }).catch(function () {});
-    live = true; liveReal = true; LIVE.on = true;
+    enterLiveView('Connecting · local diarization');
+    LIVE.poll = setInterval(livePoll, 1000);
+    SESS.id = null; SESS.lastSig = '';
+    SESS.timer = setInterval(function () { autosave(false); }, 10000);   // the session log
+    livePoll();
+  }
+
+  function enterLiveView(label) {
+    live = true; liveReal = true; LIVE.on = true; LIVE.restored = false; LIVE.attached = false;
+    LIVE.covSession = null;
     STEPS = LIVE.steps = []; LIVE.byId = {}; LIVE.lastSeg = 0; LIVE.lastCov = 0; LIVE.session = null; LIVE.staleSession = null; LIVE.fails = 0;
     TBASE = 0; notes = []; state = {};
     liveIdx = -1; viewIdx = -1; reviewing = false; tlDrag = false; userMarks = []; tlCursorX = null; hideTip();
@@ -2709,7 +2749,7 @@
     pauseBtn.hidden = true;
     setDockLive(true);
     caps.hidden = false;
-    caps.innerHTML = '<div class="status"><span class="dot"></span><span class="rec">Connecting · local diarization</span>' +
+    caps.innerHTML = '<div class="status"><span class="dot"></span><span class="rec">' + esc(label) + '</span>' +
       '<span class="mono roam"></span><span class="spacer"></span><span class="mono clock">00:00</span></div>' +
       '<div class="tl" id="tl"><button class="tl-live" id="tlLive">LIVE</button>' +
       '<div class="tl-track" id="tlTrack"><div class="tl-elapsed" id="tlElapsed"></div>' +
@@ -2718,8 +2758,7 @@
     clearBadges(); clearAnnos(); toasts.innerHTML = '';
     setLayer('tree'); initTL(); coverage(); drawInspector();
     if (liveBtn) liveBtn.classList.add('on');
-    LIVE.poll = setInterval(livePoll, 1000);
-    livePoll();
+    syncTransport();
   }
 
   function livePoll() {
@@ -2740,6 +2779,11 @@
     });
     fetch(API + '/api/coverage?after=' + LIVE.lastCov).then(function (r) { return r.json(); }).then(function (d) {
       if (!d.events) return;
+      // Coverage numbering restarts for every interview. Only use events for the interview
+      // we are showing, and restart the counter when the server switches interviews -
+      // otherwise a previous interview's events push the counter past the new ones.
+      if (d.session !== LIVE.covSession) { LIVE.covSession = d.session; LIVE.lastCov = 0; return; }
+      if (!LIVE.session || d.session !== LIVE.session) return;
       d.events.forEach(applyCoverage);
       if (d.events.length) LIVE.lastCov = d.events[d.events.length - 1].id;
     }).catch(function () {});
@@ -2930,13 +2974,21 @@
     setLayer('tree');
     initTL();
     coverage(); drawInspector(); tick();
+    syncTransport();
   }
 
   function stopLive() {
-    if (liveIdx >= 0 || redSpans.length || userMarks.length) MM_LAST = mmSnapshot();   // keep it for the mind map
+    if (liveIdx >= 0 || redSpans.length || userMarks.length) {
+      MM_LAST = mmSnapshot();                           // keep it for the mind map
+      SESS.last = sessionSnapshot();                    // ...and for "Download session file"
+      autosave(true);                                   // final entry in the session log
+    }
+    if (SESS.timer) { clearInterval(SESS.timer); SESS.timer = null; }
     clearTimeout(timer); live = false;
     if (LIVE.poll) { clearInterval(LIVE.poll); LIVE.poll = null; }
-    if (liveReal) fetch(API + '/api/stop', { method: 'POST' }).catch(function () {});   // stop the pipeline too
+    var onlyReviewing = LIVE.restored && !LIVE.attached;
+    LIVE.restored = LIVE.attached = false;
+    if (liveReal && !onlyReviewing) fetch(API + '/api/stop', { method: 'POST' }).catch(function () {});   // stop the pipeline too
     STEPS = SCRIPT; TBASE = 12; liveReal = false; LIVE.on = false;
     app.classList.remove('live-real');
     if (liveBtn) liveBtn.classList.remove('on');
@@ -2952,6 +3004,7 @@
     clearAnnos();
     state = {}; notes = []; clearBadges(); toasts.innerHTML = '';
     coverage(); drawInspector();
+    syncTransport();
   }
 
   function finish() {
@@ -3202,16 +3255,19 @@
     var s = recSpan; recSpan = null;
     s.endMs = Math.max(recNow(), s.pressMs + (Date.now() - s.pressedAt));   // ends exactly at release
     s.el.classList.remove('live');
+    armClip(s);
+    updateTL();
+    if ($('rater').classList.contains('active')) startRaterTimeout();   // 3s to pick a reaction, else dismiss
+  }
+  function armClip(s) {                    // a finished clip: clickable, tooltip, on the timeline
     s.el.addEventListener('click', function (ev) { ev.stopPropagation(); addClipNote(s); });
     attachTip(s.el, function () { return 'RECORDED CLIP · click to add a note'; }, function () {
-      var b = fmtTime(12 + s.startMs / 1000) + ' – ' + fmtTime(12 + s.endMs / 1000);
+      var b = fmtTime(TBASE + s.startMs / 1000) + ' – ' + fmtTime(TBASE + s.endMs / 1000);
       if (s.reaction) { var m = reactMeta(s.reaction); b += '\n' + m.g + ' ' + m.l; }
       (s.notes || []).forEach(function (nt) { b += '\n✎ ' + nt; });
       return b;
     });
     redSpans.push(s);
-    updateTL();
-    if ($('rater').classList.contains('active')) startRaterTimeout();   // 3s to pick a reaction, else dismiss
   }
   document.addEventListener('keyup', function (e) { if (e.key.toLowerCase() === 'r') stopRec(); });
 
@@ -3507,6 +3563,194 @@
     $('importModal').hidden = true;
   });
 
+  /* ================= interview sessions: autosave log, download / upload, resume =========== */
+  // While a real interview runs, the whole session (transcript as the canvas holds it, coverage,
+  // recordings, notes, added questions, the tree) is saved to sessions/<id>.json every 10 s and
+  // on stop. A session can be downloaded as one file, opened again from a file or from the list,
+  // and — if the pipeline is still running after a reload — resumed live where it left off.
+  var SESS = { id: null, timer: null, lastSig: '', savedAt: null, err: null, last: null };
+  function sessionSnapshot() {
+    var f = FILES.filter(function (x) { return x.id === ACTIVE; })[0] || {};
+    var n = Math.max(0, liveIdx + 1);
+    return {
+      format: 'fieldnotes-session', version: 1, src: LIVE.src || null, demo: !liveReal,
+      session_id: LIVE.session || null,
+      tree: { name: f.name || 'Interview', data: snap(), notes: pageNotes.map(serializeNote) },
+      steps: STEPS.slice(0, n).map(function (e) {
+        return { w: e.w, t: e.t, a: !!e.a, tStart: e.tStart, tEnd: e.tEnd, seg_id: e.seg_id,
+                 mark: e.mark || [], notes: e.notes || [], anno: e.anno || [], cur: e.cur || null };
+      }),
+      clips: redSpans.map(function (c) { return { startMs: c.startMs, endMs: c.endMs, reaction: c.reaction || 0, notes: (c.notes || []).slice() }; }),
+      marks: userMarks.map(function (m) { return { idx: m.idx, text: m.text, host: m.host || null, q: !!m.q }; }),
+      current: current || null, tbase: TBASE, lastSeg: LIVE.lastSeg, lastCov: LIVE.lastCov,
+      duration: n ? fmtTime(TBASE + (cumEnd[n - 1] || 0) / 1000) : '00:00'
+    };
+  }
+  function sessionSig() {
+    return [liveIdx, current, redSpans.map(function (c) { return (c.reaction || 0) + ':' + (c.notes || []).length; }).join(','),
+            userMarks.map(function (m) { return m.text.length; }).join(',')].join('|');
+  }
+  function autosave(force) {
+    if (!liveReal || liveIdx < 0 || (LIVE.restored && !LIVE.attached)) return;
+    var sig = sessionSig();
+    if (!force && sig === SESS.lastSig) return;
+    var id = SESS.id || (SESS.id = LIVE.session || ('s' + Date.now().toString(36)));
+    fetch(API + '/api/session/save', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, data: sessionSnapshot() }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d.ok) { SESS.lastSig = sig; SESS.savedAt = new Date(); SESS.err = null; } else SESS.err = d.error; updateSessUI(); })
+      .catch(function () { SESS.err = 'server not reachable — not saved'; updateSessUI(); });
+  }
+  function clock24(d) { return d ? d.toTimeString().slice(0, 8) : ''; }
+  function updateSessUI() {
+    var b = $('sessBtn');
+    if (b) {
+      b.classList.toggle('saved', !!(live && SESS.savedAt && !SESS.err));
+      b.title = live && liveReal ? (SESS.err ? 'Session NOT saved: ' + SESS.err
+        : SESS.savedAt ? 'Session autosaved ' + clock24(SESS.savedAt) : 'Session will autosave once the first line arrives')
+        : 'Interview session — autosave log, download, open';
+    }
+    var st = $('sStat'); if (!st || $('sessModal').hidden) return;
+    st.className = 'sstat' + (live ? ' live' : '');
+    if (live && LIVE.restored && !LIVE.attached) st.textContent = 'Reviewing a saved session (not live). Click ◉ to close it and start a new interview.';
+    else if (live && liveReal) st.textContent = SESS.err ? '⚠ Not saved: ' + SESS.err
+      : SESS.savedAt ? 'Live interview · autosaved every 10 s · last saved ' + clock24(SESS.savedAt) + (SESS.id ? ' (sessions/' + SESS.id + '.json)' : '')
+      : 'Live interview · autosave starts with the first transcript line.';
+    else if (live) st.textContent = 'Demo running — demos aren’t logged, but you can still download it.';
+    else st.textContent = SESS.last ? 'No interview running. The last one is ready to download.' : 'No interview running.';
+    $('sDown').disabled = !(live || SESS.last);
+  }
+  function downloadSession() {
+    var d = live ? sessionSnapshot() : SESS.last;
+    if (!d) return;
+    var name = ((d.tree && d.tree.name) || 'interview').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'interview';
+    var blob = new Blob([JSON.stringify(d)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = name + '-' + new Date().toISOString().slice(0, 10) + '.fieldnotes.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    sessMsg('Downloaded ' + a.download);
+  }
+  function sessMsg(t, err) { var m = $('sMsg'); m.textContent = t; m.classList.toggle('err', !!err); }
+
+  function restoreSession(d, attach) {
+    if (!d || d.format !== 'fieldnotes-session' || !Array.isArray(d.steps)) { sessMsg('That isn’t a Fieldnotes session file.', true); return false; }
+    if (live) stopLive();
+    // the tree it was recorded against: reuse an identical one, else add it as a new tree
+    var t = d.tree || {}, f = FILES.filter(function (x) { return x.data === t.data; })[0];
+    if (!f && t.data) {
+      saveActive();
+      f = { id: newId(), name: (t.name || 'Interview') + ' (session)', data: t.data, notes: t.notes || [] };
+      FILES.push(f); persistFiles();
+    }
+    if (f && f.id !== ACTIVE) { saveActive(); loadFile(f.id, false); }
+    var when = (d.saved_at || '').replace('T', ' ').slice(0, 16);
+    enterLiveView(attach ? 'Resumed · live · local' : 'Saved session' + (when ? ' · ' + when : ''));
+    liveReal = !d.demo; LIVE.src = d.src || null;
+    if (!liveReal) app.classList.remove('live-real');
+    TBASE = d.tbase != null ? d.tbase : 0;
+    STEPS = LIVE.steps = d.steps; LIVE.byId = {};
+    STEPS.forEach(function (e, i) { if (e.seg_id != null) LIVE.byId[e.seg_id] = i; });
+    computeTimeline();
+    liveIdx = viewIdx = STEPS.length - 1;
+    (d.clips || []).forEach(function (c) {
+      var clip = { startMs: c.startMs, endMs: c.endMs, reaction: c.reaction || 0, notes: (c.notes || []).slice(), el: document.createElement('button') };
+      clip.el.className = 'tl-rec'; $('tlTrack').appendChild(clip.el);
+      armClip(clip); renderRecBadge(clip);
+    });
+    (d.marks || []).forEach(function (m) {
+      if (m.q) addQMark(m.idx, m.text);
+      else { addUserMark(m.idx, m.text); userMarks[userMarks.length - 1].host = m.host; }
+    });
+    LIVE.restored = true; LIVE.attached = !!attach; LIVE.session = d.session_id || null;
+    LIVE.lastSeg = d.lastSeg || STEPS.reduce(function (a, e) { return Math.max(a, e.seg_id || 0); }, 0);
+    LIVE.lastCov = d.lastCov || 0;
+    if (d.current) current = d.current;
+    if (liveIdx >= 0) rebuildTo(liveIdx, true); else updateTL();
+    var c = caps.querySelector('.clock'); if (c) c.textContent = d.duration || '00:00';
+    SESS.last = d; SESS.lastSig = ''; SESS.savedAt = null; SESS.err = null;
+    if (attach) {                           // pick the running pipeline back up where we left off
+      SESS.id = d.session_id;
+      LIVE.poll = setInterval(livePoll, 1000);
+      SESS.timer = setInterval(function () { autosave(false); }, 10000);
+    }
+    syncTransport(); updateSessUI();
+    return true;
+  }
+
+  function renderSessList() {
+    var list = $('sList');
+    list.innerHTML = '<div class="empty">Loading…</div>';
+    Promise.all([
+      fetch(API + '/api/sessions').then(function (r) { return r.json(); }),
+      fetch(API + '/api/status').then(function (r) { return r.json(); }),
+      fetch(API + '/api/segments?after=0').then(function (r) { return r.json(); }).catch(function () { return {}; })
+    ]).then(function (res) {
+      var items = res[0].sessions || [], running = res[1].running ? res[2].session : null;
+      if (!items.length) { list.innerHTML = '<div class="empty">No saved sessions yet — they appear here once a live interview has started.</div>'; return; }
+      list.innerHTML = items.map(function (it) {
+        var resumable = running && it.session_id === running && !(live && LIVE.session === running);
+        return '<div class="srec' + (resumable ? ' running' : '') + '"><span class="sn"><b>' + esc(it.name) + '</b>' +
+          '<span class="sm">' + esc((it.saved_at || '').replace('T', ' ').slice(0, 16)) + ' · ' + it.lines + ' lines · ' +
+          (it.duration || '00:00') + ' · ' + it.clips + ' clip' + (it.clips === 1 ? '' : 's') + (it.src ? ' · ' + esc(it.src) : '') +
+          (resumable ? ' · <b>still running</b>' : '') + '</span></span>' +
+          (resumable ? '<button class="xbtn primary" data-sresume="' + esc(it.id) + '">Resume live</button>' : '') +
+          '<button class="xbtn" data-sopen="' + esc(it.id) + '">Open</button></div>';
+      }).join('');
+      if (items.some(function (it) { return running && it.session_id === running; }) && !(live && LIVE.session === running)) {
+        $('sStat').className = 'sstat resume';
+        $('sStat').textContent = 'An interview is still running on the server. Resume it to carry on where you left off — nothing is lost.';
+      }
+    }).catch(function () { list.innerHTML = '<div class="empty">No backend — start the server (./start.sh).</div>'; });
+  }
+  function openSessions() {
+    sessMsg('');
+    $('sessModal').hidden = false;
+    updateSessUI(); renderSessList();
+  }
+  $('sessBtn').addEventListener('click', openSessions);
+  $('sDown').addEventListener('click', downloadSession);
+  $('sFile').addEventListener('change', function () {
+    var file = this.files[0]; if (!file) return;
+    var rd = new FileReader();
+    rd.onload = function () {
+      var d = null; try { d = JSON.parse(rd.result); } catch (e) {}
+      if (restoreSession(d, false)) { $('sessModal').hidden = true; }
+    };
+    rd.readAsText(file);
+    this.value = '';
+  });
+  $('sessModal').addEventListener('click', function (e) {
+    if (e.target === $('sessModal') || e.target.closest('[data-xclose]')) { $('sessModal').hidden = true; return; }
+    var o = e.target.closest('[data-sopen],[data-sresume]');
+    if (!o) return;
+    var resume = !!o.dataset.sresume, id = o.dataset.sresume || o.dataset.sopen;
+    fetch(API + '/api/session?id=' + encodeURIComponent(id)).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j.ok) throw new Error(j.error);
+      if (restoreSession(j.data, resume)) $('sessModal').hidden = true;
+    }).catch(function (err) { sessMsg(err.message, true); });
+  });
+  // after a reload: if the server is still recording a session we have a log for, offer to resume
+  function checkResume() {
+    Promise.all([
+      fetch(API + '/api/status').then(function (r) { return r.json(); }),
+      fetch(API + '/api/segments?after=0').then(function (r) { return r.json(); }),
+      fetch(API + '/api/sessions').then(function (r) { return r.json(); })
+    ]).then(function (res) {
+      if (!res[0].running || live) return;
+      var sid = res[1].session;
+      if ((res[2].sessions || []).some(function (it) { return it.session_id === sid; })) openSessions();
+    }).catch(function () {});
+  }
+
+  // play / pause belong to the Sample demo only
+  function syncTransport() {
+    var src = ($('srcSel') && $('srcSel').value) || 'sample';
+    runBtn.hidden = !live && src !== 'sample';
+    if (!live || liveReal) pauseBtn.hidden = true;
+  }
+  $('srcSel').addEventListener('change', syncTransport);
+
   /* ---------- boot ---------- */
   /* ================= files: multiple trees / blank pages (tldraw-style) ================= */
   var FILES = [], ACTIVE = null, filesTimer = null, BUILTIN = null;
@@ -3583,8 +3827,9 @@
     });
     html += '<div class="filenew" id="fileNew"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.5v9M3.5 8h9"/></svg>New blank tree</div>';
     html += '<div class="filenew" id="fileTpl"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3.5h6l3 3v6H3z"/><path d="M9 3.5v3h3"/></svg>Industrial-design CAD (template)</div>';
-    html += '<div class="filenew" id="fileImport"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 10.5v-8M4.5 6L8 2.5 11.5 6"/><path d="M3 12.5h10"/></svg>Import tree… (tldraw, Miro, Word, PDF, picture)</div>';
-    html += '<div class="filenew" id="fileExport"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 2.5v8M4.5 7L8 10.5 11.5 7"/><path d="M3 12.5h10"/></svg>Export document… (Word / PDF)</div>';
+    html += '<div class="filenew" id="fileImport"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 10.5v-8M4.5 6L8 2.5 11.5 6"/><path d="M3 12.5h10"/></svg>Import tree</div>';
+    html += '<div class="filenew" id="fileSess"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2.5h8l2.5 2.5v8.5H3z"/><path d="M5.5 2.5v3.5h5V2.5"/></svg>Interview session</div>';
+    html += '<div class="filenew" id="fileExport"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 2.5v8M4.5 7L8 10.5 11.5 7"/><path d="M3 12.5h10"/></svg>Export document</div>';
     list.innerHTML = html;
   }
   function openFileList() { renderFileList(); $('fileList').hidden = false; $('filemenu').classList.add('open'); }
@@ -3622,6 +3867,7 @@
       if (e.target.closest('#fileTpl')) { newFromTemplate(); return; }
       if (e.target.closest('#fileExport')) { closeFileList(); openExport(); return; }
       if (e.target.closest('#fileImport')) { closeFileList(); openImport(); return; }
+      if (e.target.closest('#fileSess')) { closeFileList(); openSessions(); return; }
       var fn = e.target.closest('.fn');
       if (fn && fn.getAttribute('contenteditable') === 'true') return;   // editing, don't switch
       var row = e.target.closest('.filerow');
@@ -3644,6 +3890,7 @@
 
   renumber();
   layout();
+  setTimeout(function () { syncTransport(); checkResume(); }, 0);
   buildSpine();
   markHere(1);
   initFiles();
