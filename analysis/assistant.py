@@ -19,6 +19,7 @@ import argparse
 import atexit
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -64,25 +65,32 @@ def stop_pipeline():
     PIPE_INFO.update(running=False, source=None)
 
 def start_pipeline(source, device, names):
-    """Spawn diarization/pipeline.py. source: 'sample' | 'device' | 'system'.
-    'system' pipes the ScreenCaptureKit helper's PCM into --source stdin (no BlackHole)."""
+    """Spawn diarization/pipeline.py. source: 'sample' | 'device' | 'system' | 'call'.
+    'system' pipes the Core Audio process-tap helper's PCM into --source stdin (no BlackHole).
+    'call' adds your microphone as a second channel: you = mic, them = system audio, so the
+    speakers come from the channel and no diarization model is loaded."""
     global PIPE, CAP, PIPE_LOG
     stop_pipeline()
     names = names or "Interviewer,Candidate"
     PIPE_LOG = open(os.path.join(DIAR, "pipeline.log"), "w")
     base = [sys.executable, PIPELINE, "--reset", "--names", names]
-    if source == "system":
+    if source in ("system", "call"):
         if not os.path.exists(CAPTURE):
             PIPE_LOG.write("[system] capture helper not built. Run: diarization/capture/build.sh\n")
             PIPE_LOG.flush()
             raise FileNotFoundError("capture helper not built (diarization/capture/build.sh)")
         cap_args = [CAPTURE] + (["--app", device] if device else [])   # device carries an optional app name
+        if source == "call":
+            cap_args.append("--with-mic")
         CAP = subprocess.Popen(cap_args, stdout=subprocess.PIPE, stderr=PIPE_LOG)
-        PIPE = subprocess.Popen(base + ["--source", "stdin"], cwd=DIAR,
+        chans = ["--channels", "2"] if source == "call" else []
+        PIPE = subprocess.Popen(base + ["--source", "stdin"] + chans, cwd=DIAR,
                                 stdin=CAP.stdout, stdout=PIPE_LOG, stderr=subprocess.STDOUT)
         CAP.stdout.close()          # let the helper get SIGPIPE if the pipeline dies
     elif source == "sample":
-        PIPE = subprocess.Popen(base + ["--source", "file", "--path", SAMPLE],
+        # The sample's two synthetic voices are too alike for Nemotron (it hears one
+        # speaker); Sortformer splits them cleanly. Live sources keep Nemotron.
+        PIPE = subprocess.Popen(base + ["--diarizer", "sortformer", "--source", "file", "--path", SAMPLE],
                                 cwd=DIAR, stdout=PIPE_LOG, stderr=subprocess.STDOUT)
     else:  # device (mic / BlackHole)
         PIPE = subprocess.Popen(base + ["--source", "device", "--device", device or "MacBook Pro Microphone"],
@@ -178,6 +186,215 @@ def ollama_cues(model, question, kind="answered"):
         if c and c not in seen:
             seen.add(c); cues.append(c)
     return cues[:8]
+
+
+# ---- anonymization: people's names -> [PERSON] ------------------------------------
+# The LLM only LISTS the names it sees; the replacement is done here. A free-form
+# rewrite drifts (it invents tags like [COMPANY], drops words), whereas exact-string
+# masking can change nothing but the names themselves.
+NAME_SYS = (
+    "List every PERSON'S NAME that appears in the user's text: first names, last names, "
+    "full names, nicknames. People only - not companies, products, places, teams or job "
+    "titles. Copy each name exactly as written. Output ONLY JSON: {\"names\": [\"...\"]}. "
+    "If there are none, output {\"names\": []}."
+)
+NAMES_SEEN = {}                 # source text -> names the LLM found in it (None = LLM failed)
+KNOWN_NAMES = set()             # every name found this server run; masked in ALL texts
+ANON_LLM = threading.Lock()     # one LLM call at a time; don't pile onto the GPU
+_NOT_NAMES = {"I", "The", "A", "An", "We", "You", "He", "She", "They", "It", "My", "Our",
+              "Your", "So", "Yeah", "Yes", "No", "Okay", "OK", "And", "But", "Hi", "Hello",
+              "Thanks", "Honestly", "Interviewer", "Candidate", "Dr", "Mr", "Mrs", "Ms"}
+_NAME_PARTICLES = {"de", "van", "von", "da", "di", "la", "le", "del", "der", "bin", "al"}
+# design / CAD software the small model likes to mistake for people ("in Rhino, ...")
+_TOOLS = {"rhino", "rhinoceros", "fusion", "fusion 360", "solidworks", "onshape", "grasshopper",
+          "creo", "catia", "nx", "inventor", "autocad", "blender", "keyshot", "figma", "sketch",
+          "maya", "alias", "revit", "sketchup", "cinema", "houdini", "zbrush", "vred", "ansys",
+          "abaqus", "comsol", "matlab", "excel", "jira", "slack", "teams", "notion", "miro"}
+VERIFY_SYS = (
+    "Answer whether the given word or phrase is used as a PERSON'S NAME in the sentence. "
+    "Software, products, companies, places and teams are NOT people. "
+    "Output ONLY JSON: {\"person\": true} or {\"person\": false}."
+)
+
+
+def _name_re(name):
+    return re.compile(r"(?<!\w)" + re.escape(name) + r"(?!\w)")
+
+
+def _plausible_name(name, text):
+    """Guard against LLM noise ('latency', 'us'): a name must occur verbatim in the
+    text and every word of it must be capitalized there."""
+    name = name.strip()
+    if not name or len(name) > 40 or name in _NOT_NAMES or not _name_re(name).search(text):
+        return False
+    words = re.findall(r"[^\W\d_][\w'.-]*", name)
+    return bool(words) and all(w[0].isupper() for w in words if w.lower() not in _NAME_PARTICLES)
+
+
+def _llm_names(model, text):
+    body = json.dumps({
+        "model": model,
+        "messages": [{"role": "system", "content": NAME_SYS}, {"role": "user", "content": text}],
+        "stream": False, "format": "json", "options": {"temperature": 0},
+    }).encode()
+    req = urllib.request.Request(OLLAMA_URL, data=body, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        names = json.loads(json.load(r)["message"]["content"]).get("names", [])
+    with LOCK:
+        plan = PLAN["text"]
+    out = []
+    for n in names:
+        if not isinstance(n, str) or not _plausible_name(n, text):
+            continue
+        n = n.strip()
+        if n.lower() in _TOOLS:
+            continue
+        if plan and all(_name_re(w).search(plan) for w in n.split()):
+            continue                            # a term from your own question plan, not a person
+        if _llm_is_person(model, n, text):
+            out.append(n)
+    return out
+
+
+def _llm_is_person(model, name, text):
+    """Second opinion on one candidate. Errs toward masking if the check itself fails."""
+    body = json.dumps({
+        "model": model,
+        "messages": [{"role": "system", "content": VERIFY_SYS},
+                     {"role": "user", "content": f"Sentence: {text}\nWord or phrase: {name}"}],
+        "stream": False, "format": "json", "options": {"temperature": 0},
+    }).encode()
+    req = urllib.request.Request(OLLAMA_URL, data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(json.load(r)["message"]["content"]).get("person", True) is not False
+    except Exception:
+        return True
+
+
+def mask_names(text):
+    for name in sorted(KNOWN_NAMES, key=len, reverse=True):     # 'Sarah Chen' before 'Sarah'
+        text = _name_re(name).sub("[PERSON]", text)
+    # The model sometimes flags only a first name ('Jordan' of 'Jordan Lee'). A capitalized
+    # word right after a masked name is almost always the surname - mask it too, so a
+    # partial detection can't leak the last name. Errs toward over-masking, never leaking.
+    def _surname(m):
+        w = m.group(1)
+        return m.group(0) if w.lower() in _TOOLS or w in _NOT_NAMES else "[PERSON]"
+    prev = None
+    while prev != text:
+        prev = text
+        text = re.sub(r"\[PERSON\]\s+([A-Z][\w'’-]*)(?!\w)", _surname, text)
+    return re.sub(r"\[PERSON\](?:\s+\[PERSON\])+", "[PERSON]", text)   # 'Sarah Chen' -> one tag
+
+
+def ollama_anonymize(model, text):
+    """Text with every person's name replaced by [PERSON], or None if the LLM could not
+    be reached — callers must then show NOTHING rather than the raw text."""
+    text = (text or "").strip()
+    if not text:
+        return ""
+    if text not in NAMES_SEEN:
+        with ANON_LLM:
+            if text not in NAMES_SEEN:          # another request may have done it meanwhile
+                try:
+                    found = _llm_names(model, text)
+                    KNOWN_NAMES.update(found)
+                    NAMES_SEEN[text] = found
+                except Exception as e:
+                    print(f"[anon] name detection failed: {e}")
+                    return None                 # not cached: retried on the next request
+    return mask_names(text)
+
+
+# ---- per-category summary (mind map, left of the tree) ------------------------------
+SUM_SYS = (
+    "You summarize what an interview candidate said about one topic. Write 1-2 short "
+    "sentences in plain language, third person ('They ...'), using ONLY the excerpts given. "
+    "Do not add reasons, opinions or claims that are not literally in the excerpts. Keep who "
+    "did what exactly as stated: 'They' is only the candidate; anything a [PERSON] did must be "
+    "credited to 'a colleague', never to the candidate. Never include people's names. "
+    "Output ONLY JSON: {\"summary\": \"...\"}."
+)
+SUM_CACHE = {}
+
+
+def ollama_summary(model, topic, texts):
+    """Summary of ALREADY-ANONYMIZED excerpts; masked again on the way out as a safety net."""
+    key = topic + "\x1f" + "\x1e".join(texts)
+    if key in SUM_CACHE:
+        return SUM_CACHE[key]
+    # the small model reads plain words better than tags: '[PERSON] moved…' kept turning
+    # into 'they moved…'; 'a colleague moved…' keeps who-did-what straight
+    plain = [t.replace("[PERSON]", "a colleague") for t in texts]
+    user = f"TOPIC: {topic}\nEXCERPTS:\n" + "\n".join(f"- {t}" for t in plain)
+    body = json.dumps({
+        "model": model,
+        "messages": [{"role": "system", "content": SUM_SYS}, {"role": "user", "content": user}],
+        "stream": False, "format": "json", "options": {"temperature": 0},
+    }).encode()
+    req = urllib.request.Request(OLLAMA_URL, data=body, headers={"Content-Type": "application/json"})
+    with ANON_LLM:                                   # share the one-at-a-time LLM slot
+        with urllib.request.urlopen(req, timeout=90) as r:
+            summary = json.loads(json.load(r)["message"]["content"]).get("summary", "")
+    summary = mask_names(summary.strip()) if isinstance(summary, str) else ""
+    SUM_CACHE[key] = summary
+    return summary
+
+
+# ---- export (Word / PDF) ---------------------------------------------------------------
+class AnonymizeFailed(Exception):
+    pass
+
+
+def anonymize_payload(model, d):
+    """Replace every free-text field with its anonymized form. Raises AnonymizeFailed if any
+    text can't be anonymized - an export asked to be anonymous must never ship a raw name."""
+    texts = [s.get("text", "") for s in d.get("steps", [])]
+    texts += [n.get("text", "") for n in d.get("notes", [])]
+    texts += list(d.get("page_notes", []))
+    for c in d.get("clips", []):
+        texts += c.get("notes", [])
+    for t in dict.fromkeys(t for t in texts if t):           # detect names in every text first...
+        if ollama_anonymize(model, t) is None:
+            raise AnonymizeFailed("could not anonymize the text (is Ollama running?) - nothing was exported")
+    # ...then mask everything with the FULL set of names found, so a name first spotted in a
+    # later line is also removed from earlier ones
+    for s in d.get("steps", []):
+        s["text"] = mask_names(s.get("text", ""))
+    for n in d.get("notes", []):
+        n["text"] = mask_names(n.get("text", ""))
+    d["page_notes"] = [mask_names(t) for t in d.get("page_notes", [])]
+    for c in d.get("clips", []):
+        c["notes"] = [mask_names(t) for t in c.get("notes", [])]
+    return d
+
+
+def build_export(model, d):
+    import docexport
+    anon = bool((d.get("options") or {}).get("anonymize"))
+    for s in d.get("steps", []):          # speaker: role when anonymous, else the label as diarized
+        s["who"] = s.get("role") if anon else (s.get("speaker") or s.get("role"))
+    if anon:
+        d = anonymize_payload(model, d)
+    title, meta, blocks = docexport.build_outline(d)
+    if d.get("format") == "pdf":
+        return docexport.render_pdf(title, meta, blocks), "pdf", "application/pdf"
+    return (docexport.render_docx(title, meta, blocks), "docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+# ---- import (question tree from a file) -----------------------------------------------
+def llm_json(model, system, user):
+    body = json.dumps({
+        "model": model,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "stream": False, "format": "json", "options": {"temperature": 0, "num_ctx": 16384},
+    }).encode()
+    req = urllib.request.Request(OLLAMA_URL, data=body, headers={"Content-Type": "application/json"})
+    with ANON_LLM:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            return json.loads(json.load(r)["message"]["content"])
 
 
 def read_only(db):
@@ -308,6 +525,59 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "cues": ollama_cues(self.model, q, data.get("kind", "answered"))})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e), "cues": []})
+        if url.path == "/api/anonymize":
+            # {texts:[...]} -> {texts:[anonymized or null]}; null = could not anonymize
+            # safely, and the UI must then show nothing rather than the raw text.
+            texts = self._body().get("texts") or []
+            if not isinstance(texts, list):
+                texts = []
+            out = [ollama_anonymize(self.model, t) if isinstance(t, str) else None
+                   for t in texts[:12]]
+            return self._json({"ok": True, "texts": out})
+        if url.path == "/api/export":
+            data = self._body()
+            try:
+                blob, ext, ctype = build_export(self.model, data)
+            except AnonymizeFailed as e:
+                return self._json({"ok": False, "error": str(e)}, 503)
+            except Exception as e:
+                print(f"[export] failed: {e!r}")
+                return self._json({"ok": False, "error": f"export failed: {e}"}, 500)
+            slug = re.sub(r"[^A-Za-z0-9]+", "-", str(data.get("title") or "interview")).strip("-")[:60] or "interview"
+            name = f"{slug}-{time.strftime('%Y-%m-%d')}.{ext}"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(blob)))
+            self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Expose-Headers", "Content-Disposition")
+            self.end_headers()
+            self.wfile.write(blob)
+            return
+        if url.path == "/api/import":
+            # {name, data: base64 file} -> {name, topics:[{title, questions:[{text, followups}]}], info}
+            import docimport
+            data = self._body()
+            try:
+                raw = docimport.decode_upload(data.get("data"))
+                res = docimport.build_tree(str(data.get("name") or ""), raw,
+                                           lambda s, u: llm_json(self.model, s, u))
+                return self._json({"ok": True, **res})
+            except docimport.ImportError_ as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:
+                print(f"[import] failed: {e!r}")
+                return self._json({"ok": False, "error": f"import failed: {e}"}, 500)
+        if url.path == "/api/summarize":
+            # {topic, texts:[anonymized excerpts]} -> {summary}; texts must already be anonymized
+            data = self._body()
+            texts = [t for t in (data.get("texts") or []) if isinstance(t, str) and t.strip()][:30]
+            if not texts:
+                return self._json({"ok": True, "summary": ""})
+            try:
+                return self._json({"ok": True, "summary": ollama_summary(self.model, str(data.get("topic", "")), texts)})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e), "summary": None})
         self._send(404, b"not found", "text/plain")
 
     def do_GET(self):
