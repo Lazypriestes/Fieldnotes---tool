@@ -16,6 +16,10 @@ leaves the machine, matching the pipeline's local-only guarantee.
 """
 
 import argparse
+import hmac
+import ipaddress
+import secrets
+import socket
 import atexit
 import json
 import os
@@ -40,6 +44,12 @@ SAMPLE = os.path.join(DIAR, "sample_interview.wav")
 OLLAMA_URL = "http://localhost:11434/api/chat"
 
 # ---- diarization pipeline as a managed subprocess -----------------------
+# Share mode (opt-in, ./start.sh --share): a second interviewer's computer may join with a code.
+# Roles: "host" = this Mac without a code (full control), "viewer" = anyone presenting the code
+# (watch + notes; can't start/stop/pause the recording or see other saved interviews).
+SHARE = {"code": None}
+HOST_ONLY_POST = {"/api/start", "/api/stop", "/api/pause", "/api/plan", "/api/session/save"}
+HOST_ONLY_GET = {"/api/sessions", "/api/session"}
 SESS_DIR = os.path.join(ROOT, "sessions")                # autosaved interview sessions (gitignored)
 CAPTURE = os.path.join(DIAR, "capture", "systemaudio")   # optional SCK helper (built separately)
 PIPE = None                                              # pipeline Popen, or None
@@ -546,18 +556,66 @@ class Handler(BaseHTTPRequestHandler):
     model = "llama3.2:3b"
     ui_path = ""
 
-    def _send(self, code, body, ctype):
+    def _send(self, code, body, ctype, headers=None):
+        # No Access-Control-Allow-Origin: the app is served from this same server, and a
+        # wildcard would let ANY website open in your browser read the transcripts here.
         if isinstance(body, str):
             body = body.encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
+
+    def _cookie(self, name):
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == name:
+                return v
+        return None
+
+    def _host_ok(self):
+        """Refuse requests addressed to some other hostname (DNS-rebinding defence): only
+        localhost, a raw IP address, or this Mac's own .local name."""
+        host = (self.headers.get("Host") or "").strip().lower()
+        host = host[1:host.index("]")] if host.startswith("[") and "]" in host else host.rsplit(":", 1)[0]
+        if host in ("localhost", "127.0.0.1", "::1", MY_LOCAL_NAME):
+            return True
+        try:
+            ipaddress.ip_address(host)
+            return True
+        except ValueError:
+            return False
+
+    def _role(self, url):
+        code = SHARE["code"]
+        given = parse_qs(url.query).get("join", [None])[0] or self._cookie("fn_join")
+        if code and given and hmac.compare_digest(str(given), code):
+            return "viewer"
+        if self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+            return "host"
+        return None
+
+    def _gate(self, url, method):
+        """-> role, or None after sending a refusal."""
+        if not self._host_ok():
+            self._send(403, b"forbidden host", "text/plain")
+            return None
+        role = self._role(url)
+        if role is None:
+            if url.path == "/":
+                self._send(403, "<h1>Fieldnotes</h1><p>Ask the interviewer for the join link.</p>",
+                           "text/html; charset=utf-8")
+            else:
+                self._json({"ok": False, "error": "join code required"}, 403)
+            return None
+        if role == "viewer" and url.path in (HOST_ONLY_POST if method == "POST" else HOST_ONLY_GET):
+            self._json({"ok": False, "error": "only the recording computer can do that"}, 403)
+            return None
+        return role
 
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj), "application/json")
@@ -584,6 +642,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         url = urlparse(self.path)
+        if not self._gate(url, "POST"):
+            return
         if url.path == "/api/plan":
             data = self._body()
             qs = data.get("questions", [])
@@ -680,8 +740,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(blob)))
             self.send_header("Content-Disposition", f'attachment; filename="{name}"')
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Expose-Headers", "Content-Disposition")
             self.end_headers()
             self.wfile.write(blob)
             return
@@ -713,11 +771,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         url = urlparse(self.path)
+        role = self._gate(url, "GET")
+        if not role:
+            return
 
         if url.path == "/":
             if self.ui_path and os.path.exists(self.ui_path):
                 with open(self.ui_path, "rb") as f:
-                    return self._send(200, f.read(), "text/html; charset=utf-8")
+                    headers = {}
+                    if role == "viewer" and parse_qs(url.query).get("join"):   # remember the code
+                        headers["Set-Cookie"] = f"fn_join={SHARE['code']}; Path=/; SameSite=Strict; Max-Age=43200"
+                    return self._send(200, f.read(), "text/html; charset=utf-8", headers)
             return self._send(200, b"<h1>assistant running</h1><p>no --ui set</p>", "text/html")
 
         if url.path == "/api/segments":
@@ -758,6 +822,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": True, "data": json.load(f)})
             except (ValueError, OSError) as e:
                 return self._json({"ok": False, "error": f"no such session ({e})"}, 404)
+        if url.path == "/api/whoami":
+            return self._json({"role": role, "share": bool(SHARE["code"])})
         if url.path == "/api/status":
             running = bool(PIPE and PIPE.poll() is None)
             if not running and PIPE_INFO["running"]:
@@ -771,20 +837,46 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def lan_ip():
+    """This Mac's address on the local network (no packet is sent)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))
+            return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
+MY_LOCAL_NAME = (socket.gethostname() or "").lower()
+if MY_LOCAL_NAME and not MY_LOCAL_NAME.endswith(".local"):
+    MY_LOCAL_NAME += ".local"
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--db", default=DB_DEFAULT)
     p.add_argument("--ui", default=UI_DEFAULT)
     p.add_argument("--model", default="llama3.2:3b")
     p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--share", action="store_true",
+                   help="let a second interviewer's computer join with a code (listens on the network)")
+    p.add_argument("--bind", default=None,
+                   help="address to listen on (default 127.0.0.1; 0.0.0.0 with --share)")
     args = p.parse_args()
+    bind = args.bind or ("0.0.0.0" if args.share else "127.0.0.1")
+    if args.share:
+        alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"          # no 0/O, 1/I lookalikes
+        SHARE["code"] = "".join(secrets.choice(alphabet) for _ in range(6))
 
     Handler.db_path = args.db
     Handler.ui_path = args.ui
     Handler.model = args.model
     threading.Thread(target=worker, args=(args.db, args.model), daemon=True).start()
-    srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    srv = ThreadingHTTPServer((bind, args.port), Handler)
     print(f"assistant:   http://localhost:{args.port}")
+    if SHARE["code"]:
+        print(f"SHARING:     second interviewer opens  http://{lan_ip()}:{args.port}/?join={SHARE['code']}")
+        print(f"             (same Wi-Fi / Tailscale; join code {SHARE['code']}; ctrl-c ends sharing)")
     print(f"ui:          {args.ui}")
     print(f"transcript:  {args.db}  (read-only)")
     print(f"llm:         {args.model} via {OLLAMA_URL}")

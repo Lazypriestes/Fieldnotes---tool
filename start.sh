@@ -2,7 +2,8 @@
 #
 # Serve the Fieldnotes app (the analysis layer: canvas UI + transcript API + LLM coverage).
 #
-#   ./start.sh                 # http://localhost:8000
+#   ./start.sh                 # http://localhost:8000  (this Mac only)
+#   ./start.sh --share         # + let a second interviewer join from their computer (join code)
 #   PORT=9000 ./start.sh
 #
 # Run the diarization pipeline separately to feed it live audio (see README).
@@ -18,4 +19,4 @@ fi
 echo "Fieldnotes -> http://localhost:$PORT   (ctrl-c to stop)"
 echo "Open the page, click ◉ to go live (the server starts diarization for you)."
 ( sleep 1; command -v open >/dev/null 2>&1 && open "http://localhost:$PORT" ) &
-exec "$PY" "$DIR/analysis/assistant.py" --port "$PORT"
+exec "$PY" "$DIR/analysis/assistant.py" --port "$PORT" "$@"
