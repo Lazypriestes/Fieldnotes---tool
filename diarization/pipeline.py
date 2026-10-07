@@ -18,6 +18,7 @@ Two sources:
 """
 
 import argparse
+import re
 import os
 import queue
 import sys
@@ -457,7 +458,7 @@ def diarize_worker(diarizer, sf_threshold, max_turn, silence_finalize, min_turn,
 # call mode: speaker = channel (mic = you, system = them) — no diarization model
 # --------------------------------------------------------------------------
 
-def channel_worker(max_turn, silence_finalize, min_turn, mic_delay=0.2):
+def channel_worker(max_turn, silence_finalize, min_turn, mic_delay=0.2, diarizer=None, split=()):
     """2-channel input [mic, system] -> speaker turns. Who spoke comes from the channel,
     with an ECHO MODEL so sound from your speakers reaching the mic never counts as you:
 
@@ -475,7 +476,13 @@ def channel_worker(max_turn, silence_finalize, min_turn, mic_delay=0.2):
 
     mic_delay: the system-audio tap reaches us ~0.2 s later than the microphone (measured:
     speaker echo hits the mic 209 ms before the same sound arrives on the system channel);
-    the mic is delayed by that much so the two channels line up."""
+    the mic is delayed by that much so the two channels line up.
+
+    split: channels to ALSO diarize (0 = mic, 1 = system) when more than one person can be on
+    a channel - two interviewers in the room (split the mic), or a second interviewer on the
+    call (split the system side). One Nemotron model serves both, with a separate streaming
+    state per channel. A turn is then cut wherever the speaker inside the channel changes, and
+    each piece is labelled with speaker index channel*8 + sub-speaker."""
     from collections import deque
     bufs = [RollingBuffer(), RollingBuffer()]
     lag_blocks = max(0, int(round(mic_delay * SAMPLE_RATE / BLOCK)))
@@ -491,6 +498,29 @@ def channel_worker(max_turn, silence_finalize, min_turn, mic_delay=0.2):
     cand, cand_since = None, 0.0         # a would-be new speaker and since when
     t = 0.0
     dropped = [0]
+    states = {c: diarizer.init_streaming_state() for c in split} if diarizer else {}
+    timelines = {c: [] for c in states}  # (start, end, sub-speaker) per split channel
+
+    def pieces(c, t0, t1):
+        """Cut [t0, t1] where the speaker inside channel c changes; blips < 0.6 s are absorbed."""
+        segs = sorted((max(a, t0), min(b, t1), k) for a, b, k in timelines.get(c, []) if b > t0 and a < t1)
+        out = []
+        for a, b, k in segs:
+            if out and out[-1][2] == k:
+                out[-1][1] = max(out[-1][1], b)
+            elif b - a >= 0.6 or not out:
+                out.append([a, b, k])
+            else:
+                out[-1][1] = max(out[-1][1], b)
+        if not out:
+            return [(t0, t1, 0)]
+        out[0][0], out[-1][1] = t0, t1
+        for i in range(1, len(out)):
+            # Nemotron marks a new speaker's onset ~0.3 s late; move the cut back into the
+            # pause so the newcomer's first word isn't left on the previous speaker's line
+            out[i][0] = max(out[i - 1][0] + 0.3, out[i][0] - 0.35)
+            out[i - 1][1] = out[i][0]         # no gaps: each piece runs until the next begins
+        return [tuple(x) for x in out]
 
     def envelope(x, frame=320):          # 20 ms loudness frames
         n = len(x) // frame
@@ -509,17 +539,18 @@ def channel_worker(max_turn, silence_finalize, min_turn, mic_delay=0.2):
                 best = max(best, float(np.corrcoef(em, w)[0, 1]))
         return best > 0.6
 
-    def dispatch(spk, t0, t1):
+    def dispatch(ch, t0, t1):
         if t1 - t0 < 0.25:
             return
-        if spk == 0 and is_echo(t0, t1):
+        if ch == 0 and is_echo(t0, t1):
             dropped[0] += 1
             print(f"[call] dropped {t1 - t0:.1f}s of speaker echo on the mic", flush=True)
             return
-        a0 = max(t0 - PAD, bufs[spk].start)
-        audio = bufs[spk].slice(a0, t1 + PAD)
-        if len(audio):
-            turn_q.put((a0, audio, spk, t0, t1))
+        for a, b, sub in (pieces(ch, t0, t1) if ch in states else [(t0, t1, 0)]):
+            a0 = max(a - PAD, bufs[ch].start)
+            audio = bufs[ch].slice(a0, b + PAD)
+            if len(audio):
+                turn_q.put((a0, audio, ch * 8 + sub, a, b))
 
     while True:
         block = audio_q.get()
@@ -530,6 +561,13 @@ def channel_worker(max_turn, silence_finalize, min_turn, mic_delay=0.2):
         if len(mic) != len(sys_):              # a short last block
             mic = np.resize(mic, len(sys_))
         bufs[0].append(mic); bufs[1].append(sys_)
+        for c in states:                      # who is speaking INSIDE a shared channel
+            res, states[c] = diarizer.feed(mic if c == 0 else sys_, states[c], SAMPLE_RATE,
+                                           threshold=0.5, min_duration=0.2)
+            timelines[c].extend((g.start, g.end, g.speaker) for g in res.segments)
+            keep_from = bufs[c].start
+            if timelines[c] and timelines[c][0][1] < keep_from:
+                timelines[c] = [g for g in timelines[c] if g[1] >= keep_from]
         rm = float(np.sqrt(np.mean(mic ** 2)))
         rs = float(np.sqrt(np.mean(sys_ ** 2)))
         sys_hist.append(rs)
@@ -585,8 +623,14 @@ def asr_worker(transcriber, store, session_id, names, fixed_names=False):
     # call mode one PER CHANNEL - the two channels are separate recordings, so a word on
     # one must never be dropped as a "repeat" of the other speaker's last word.
     emitted_until = {}
+    last_words = {}        # per channel: (end, word) of the last few words emitted
+
+    def _norm(w):
+        return re.sub(r"[^a-z0-9']", "", w.lower())
 
     def name_for(spk_idx):
+        if callable(fixed_names):   # call mode: the label comes from channel + sub-speaker
+            return fixed_names(spk_idx)
         if fixed_names:      # call mode: speaker index IS the channel -> names[0] = mic, names[1] = system
             return names[spk_idx] if spk_idx < len(names) else f"S{spk_idx + 1}"
         raw = f"S{spk_idx + 1}"
@@ -610,7 +654,7 @@ def asr_worker(transcriber, store, session_id, names, fixed_names=False):
         if item is None:
             break
         audio_start, samples, win_spk, win_t0, win_t1 = item
-        key = win_spk if fixed_names else 0
+        key = (win_spk // 8 if callable(fixed_names) else win_spk) if fixed_names else 0   # per channel
 
         raw = transcriber.words(samples)
         if not raw:                       # None (timed out) or [] (empty/error)
@@ -625,8 +669,16 @@ def asr_worker(transcriber, store, session_id, names, fixed_names=False):
                 if (w[0] + w[1]) / 2 >= win_t0 - 0.35
                 and (w[0] + w[1]) / 2 <= win_t1 + 0.05
                 and (w[0] + w[1]) / 2 > emitted_until.get(key, 0.0)]
+        # A turn cut between two speakers of the SAME channel: the word at the cut can be heard
+        # by both halves, with slightly different timings. Drop a leading word that repeats the
+        # previous piece's last word(s) from this channel within 0.8 s.
+        prev = last_words.get(key, [])
+        while keep and prev and any(_norm(keep[0][2]) == wtxt and abs(keep[0][0] - wend) < 0.8
+                                    for wend, wtxt in prev):
+            keep = keep[1:]
         if not keep:
             continue
+        last_words[key] = [(w[1], _norm(w[2])) for w in keep[-3:]]
         emitted_until[key] = max(w[1] for w in keep)
         emit(win_spk, keep[0][0], keep[-1][1], "".join(w[2] for w in keep))
 
@@ -673,6 +725,10 @@ def main():
     p.add_argument("--channels", type=int, choices=[1, 2], default=1,
                    help="stdin only: 2 = a call captured as [mic, system] (capture/systemaudio "
                         "--with-mic). Speakers then come from the channel; no diarizer is loaded.")
+    p.add_argument("--split", choices=["none", "mic", "system", "both"], default="none",
+                   help="call mode: also tell apart several people on one channel - 'mic' when "
+                        "two interviewers share the room, 'system' when a second interviewer "
+                        "joins the call remotely ('Remote 1', 'Remote 2', ...)")
     p.add_argument("--mic-delay", type=float, default=0.2,
                    help="call mode: delay the mic channel by this many seconds to line it up with "
                         "the (slower) system-audio channel")
@@ -715,9 +771,13 @@ def main():
                                          cw_model=args.cw_model, timeout=args.asr_timeout)
     call_mode = args.source == "stdin" and args.channels == 2
     diarizer, stream_kwargs, frame_sec = None, {}, None
+    split = {"none": (), "mic": (0,), "system": (1,), "both": (0, 1)}[args.split] if call_mode else ()
     if call_mode:
-        print("[init] call mode: you = microphone channel, them = system-audio channel "
-              "(no diarization model needed)")
+        print("[init] call mode: you = microphone channel, them = system-audio channel"
+              + (f" + speaker split on {args.split}" if split else " (no diarization model needed)"))
+        if split:
+            diarizer = load_diarizer(DIARIZERS["nemotron"])
+            diarizer.set_streaming_config(args.latency)
     elif args.diarizer == "nemotron":
         print(f"[init] loading Nemotron-3-Diarization ({args.latency} latency; "
               f"first run downloads ~200 MB)...")
@@ -738,8 +798,24 @@ def main():
     START_WALL = time.time()
     if call_mode:
         names = names or ["Interviewer", "Candidate"]
+        names += ["Candidate"] * (2 - len(names))
+
+        order = {0: [], 1: []}               # sub-speakers in the order they first SPEAK
+
+        def call_label(spk):
+            ch, sub = divmod(spk, 8)
+            if sub not in order[ch]:          # a stray blip the model numbered never shows up
+                order[ch].append(sub)
+            rank = order[ch].index(sub)
+            if ch == 0:                       # mic side: the interviewer(s) in the room
+                return names[0] if rank == 0 else f"{names[0]} {rank + 1}"
+            if 1 in split:                    # call side split: roles assigned later (talk time / UI)
+                return f"Remote {rank + 1}"
+            return names[1]
+
         speaker_thread = threading.Thread(target=channel_worker,
-                                          args=(args.max_turn, args.silence_finalize, args.min_turn, args.mic_delay),
+                                          args=(args.max_turn, args.silence_finalize, args.min_turn,
+                                                args.mic_delay, diarizer, split),
                                           daemon=True)
     else:
         speaker_thread = threading.Thread(target=diarize_worker,
@@ -749,7 +825,7 @@ def main():
     threads = [
         speaker_thread,
         threading.Thread(target=asr_worker,
-                         args=(transcriber, store, session_id, names, call_mode),
+                         args=(transcriber, store, session_id, names, call_label if call_mode else False),
                          daemon=True),
     ]
     if args.source == "file":
