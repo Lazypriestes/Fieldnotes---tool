@@ -134,6 +134,12 @@ SYS = (
     "question; naming their toughest problem answers a 'hardest thing' question.\n"
     "- INTERVIEWER utterance: the ONE plan question they are asking, status exactly \"ask\". "
     "Empty if it is small talk or a generic follow-up.\n"
+    "- Some PLAN questions carry hints in brackets. 'answered when they mention: ...' lists "
+    "phrases that signal an answer; 'asked when interviewer says: ...' lists ways it is asked. "
+    "Hints help, but the MEANING decides - a cue word in an unrelated sentence is no match.\n"
+    "- 'strictness: strict' = green only if the reply gives the specific thing asked (a number, "
+    "name, concrete example, reason); a vague mention is amber. 'strictness: loose' = any "
+    "genuine reply on the subject is green.\n"
     "- Use only ids from the PLAN. Never invent ids. status is never empty. "
     "Be conservative: omit weak matches. If nothing fits: {\"matches\":[]}."
 )
@@ -172,14 +178,73 @@ def ollama_matches(model, plan_text, speaker, text):
             st = "ask"
         if not is_interviewer and st == "ask":
             st = "amber"
+        if not is_interviewer:
+            st = apply_strictness(st, plan_strictness(qid), text, plan_cues(qid))
         clean.append({"id": qid, "status": st})
     return clean
+
+
+_HEDGES = re.compile(r"\b(kind of|sort of|i guess|more or less|not sure|i suppose|maybe|depends|"
+                     r"i don't know|dunno|roughly speaking)\b", re.I)
+
+
+def plan_strictness(qid):
+    """The [strictness: ...] the app attached to a planned question (normal if none)."""
+    with LOCK:
+        q = PLAN["by_id"].get(qid) or {}
+    m = re.search(r"\[strictness: (loose|normal|strict)\]", str(q.get("text", "")))
+    return m.group(1) if m else "normal"
+
+
+def plan_cues(qid):
+    """The 'answered when they mention: ...' cues the app attached to a planned question."""
+    with LOCK:
+        q = PLAN["by_id"].get(qid) or {}
+    m = re.search(r"\[answered when they mention: ([^\]]*)\]", str(q.get("text", "")))
+    return [c.strip().lower() for c in m.group(1).split(",") if c.strip()] if m else []
+
+
+def apply_strictness(status, strictness, utterance, cues=()):
+    """The small model ignores strictness hints, so the weight is applied here, predictably:
+    loose  -> a reply that touches the question counts as answered;
+    a reply containing one of the question's 'answered' cues counts as answered (on strict
+    questions only if it also has substance);
+    strict -> 'answered' needs substance: a short (< 8 words) or hedged reply stays 'touched'."""
+    words = re.findall(r"[A-Za-z0-9']+", utterance)
+    substantive = len(words) >= 8 and not _HEDGES.search(utterance)
+    low = " " + " ".join(w.lower() for w in words) + " "
+    cue_hit = any(" " + " ".join(re.findall(r"[a-z0-9']+", c)) + " " in low for c in cues if c)
+    if status == "amber" and cue_hit and (strictness != "strict" or substantive):
+        return "green"
+    if strictness == "loose" and status == "amber":
+        return "green"
+    if strictness == "strict" and status == "green":
+        if len(re.findall(r"[A-Za-z0-9']+", utterance)) < 8 or _HEDGES.search(utterance):
+            return "amber"
+    return status
 
 
 _GENERIC = set("""a an the and or of to in on for with at by from as is are was were be been it its this that
 these those i you we they he she my your our their me us them do does did done have has had get got make made
 thing things stuff something anything work working job really just very much many some any lot lots kind sort
-way ways time times about like also well good great important yes no maybe""".split())
+way ways time times about like also well good great important yes no maybe specific specifically
+specifics example examples general overall various recurring designer person people""".split())
+
+
+def strictness_of(question):
+    """How specific a reply must be to count as answered - from the question's wording, which
+    is far more reliable than a small model's judgement (it called almost everything 'loose')."""
+    q = " " + re.sub(r"\s+", " ", re.sub(r"[^a-z0-9' ]", " ", question.lower())).strip() + " "
+    if re.search(r" (tell me about|walk me through|describe|what drew|how do you feel|anything else|"
+                 r"what should i have asked|anything else|in general|your thoughts|talk about|"
+                 r"mean to you|honest reaction|in five years|in ten years|"
+                 r"what else (should|would|is there|do you want)) ", q):
+        return "loose"
+    if (re.search(r" how (many|much|big|long|often|old|far) | what percentage | ratio | how frequently ", q)
+            or re.match(r" (is|are|do|does|did|have|has|can|could|would|will|was|were|should) ", q)
+            or re.search(r" (early or late|yes or no|or not) ", q) or re.search(r"\b(which|who|when)\b", q)):
+        return "strict"
+    return "normal"
 
 
 def _cue_words(c):
@@ -187,6 +252,10 @@ def _cue_words(c):
 
 
 def ollama_cues(model, question, kind="answered", ctx=None):
+    return ollama_cues_ex(model, question, kind, ctx)[0]
+
+
+def ollama_cues_ex(model, question, kind="answered", ctx=None):
     """Cue phrases for one planned question, using its context so the cues mean what the
     question means here and don't overlap the questions around it.
     kind='answered': what a real ANSWER would contain (not the question's own words - the
@@ -211,10 +280,11 @@ def ollama_cues(model, question, kind="answered", ctx=None):
                 "lowercase; specific to this question (a phrase that would also fit the nearby "
                 "questions is useless); no generic filler like 'tell me more' or 'at work'.")
     else:
+        # (no example phrases in here: the small model copied them into unrelated questions)
         task = ("List 6 cues that the CANDIDATE's reply would contain if it truly answers THIS "
-                "question, read in its context above: concrete things, examples, numbers or "
-                "domain terms they would mention, or short answer-shaped phrases (e.g. 'about "
-                "five people', 'hand it to engineering'). Rules: 1-4 words each, lowercase; do "
+                "question, read in its context above: concrete things, numbers or domain terms "
+                "they would mention, or short phrases shaped like a real answer to it. "
+                "Rules: 1-4 words each, lowercase; do "
                 "NOT just repeat words of the question (the interviewer says those when asking); "
                 "no generic words (team, work, process, thing); each cue should point to THIS "
                 "question rather than the nearby ones.")
@@ -225,9 +295,11 @@ def ollama_cues(model, question, kind="answered", ctx=None):
     with urllib.request.urlopen(req, timeout=60) as r:
         out = json.load(r)
     try:
-        raw = json.loads(out["message"]["content"]).get("cues", [])
+        parsed = json.loads(out["message"]["content"])
+        raw = parsed.get("cues", [])
     except Exception:
-        return []
+        return [], None
+    strictness = strictness_of(question)
     q_words = set(_cue_words(question))
     sib_text = " " + " ".join(sibs).lower() + " "
     seen, cues = set(), []
@@ -244,7 +316,7 @@ def ollama_cues(model, question, kind="answered", ctx=None):
         if sibs and f" {c} " in sib_text:                        # literally a nearby question's phrase
             continue
         seen.add(c); cues.append(c)
-    return cues[:8]
+    return cues[:8], (strictness if kind == "answered" else None)
 
 
 # ---- anonymization: people's names -> [PERSON] ------------------------------------
@@ -708,9 +780,12 @@ class Handler(BaseHTTPRequestHandler):
                 PLAN["order"] = [q["id"] for q in qs]
                 PLAN["interviewer"] = data.get("interviewer", "Interviewer")
                 PLAN["text"] = "\n".join(f'{q["id"]}: {q["text"]}' for q in qs)
-                STATE["session"] = None      # force re-scan against the new plan
-                STATE["last_seg"] = 0
-                COVERAGE.clear()
+                if data.get("rescan", True):     # a new interview: re-scan against the new plan
+                    STATE["session"] = None
+                    STATE["last_seg"] = 0
+                    COVERAGE.clear()
+                # rescan=false: cues / strictness / an added question changed mid-interview -
+                # keep the coverage so far, the new plan applies to what is said from now on
             return self._json({"ok": True, "questions": len(qs)})
         if url.path == "/api/start":
             data = self._body()
@@ -738,7 +813,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "cues": []})
             try:
                 ctx = data.get("context") if isinstance(data.get("context"), dict) else None
-                return self._json({"ok": True, "cues": ollama_cues(self.model, q, data.get("kind", "answered"), ctx)})
+                cues, strictness = ollama_cues_ex(self.model, q, data.get("kind", "answered"), ctx)
+                return self._json({"ok": True, "cues": cues, "strictness": strictness})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e), "cues": []})
         if url.path == "/api/anonymize":

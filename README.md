@@ -112,6 +112,14 @@ sit together, pick *+1 interviewer in the room*.
   *Mind map*: the same tree plus, beside it, an AI summary per category that opens into
   its answers (each linked to every question it covers — click to jump there), recordings
   with their full script, and notes. **The mind map shows only anonymized text.**
+- **What counts as asked / answered** — select a question to see its cues and how specific an
+  answer must be (*loose / normal / strict*, set automatically from the question's wording:
+  numbers, yes/no and which/who/when are strict; open or opinion questions are loose). **✦ auto**
+  writes cues from the question *in its context* (topic, parent, the questions around it) and
+  keeps any cue you typed; select a topic to fill all its questions at once. During coverage the
+  weight is applied by fixed rules: on loose questions any real reply counts, a reply with one of
+  the question's cues counts, and on strict questions a short or hedged reply ("I guess…") is
+  only *touched*. Changes made mid-interview apply from then on without losing coverage so far.
 - **Anonymization** — people's names become `[PERSON]`: the local LLM finds the names,
   the server masks them (company, product and place names are kept). Best effort; it
   errs toward hiding a word too many rather than leaking one.
