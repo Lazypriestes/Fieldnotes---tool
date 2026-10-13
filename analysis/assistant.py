@@ -944,6 +944,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, f.read(), "text/html; charset=utf-8", headers)
             return self._send(200, b"<h1>assistant running</h1><p>no --ui set</p>", "text/html")
 
+        if url.path == "/vendor/motion.js":   # animation library, kept locally (no CDN: works offline)
+            if self.ui_path:
+                lib = os.path.join(os.path.dirname(self.ui_path), "vendor", "motion-13.4.4.js")
+                if os.path.exists(lib):
+                    with open(lib, "rb") as f:
+                        return self._send(200, f.read(), "text/javascript; charset=utf-8",
+                                          {"Cache-Control": "max-age=86400"})
+            return self._send(404, b"not found", "text/plain")
+
         if url.path == "/api/segments":
             after = self._after(url)
             try:

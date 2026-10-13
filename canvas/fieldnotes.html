@@ -726,6 +726,7 @@
   :root[data-theme="dark"] .zoomctl button:hover{background:#22272C}
   :root[data-theme="dark"] .pal li.on{background:var(--accent-soft)}
 </style>
+<script src="/vendor/motion.js"></script>
 </head>
 <body>
 
@@ -1261,14 +1262,30 @@
      lines and folds snapped, so branches visibly detached). Folding children slide into
      their parent and fade; unfolding ones grow out of it. With an anchor (the node you just
      folded) the view shifts so that node stays under the cursor. */
-  var LAYOUT_ANIM = { raf: 0, anchor: null, off: 0, touched: [] }, LAYOUT_MS = 280;
+  /* Motion (motion.dev, kept in canvas/vendor so it works offline) adds springs to a few small
+     moments. Without it, or with "reduce motion" on, the same things happen without the flourish. */
+  var MO = window.Motion || null;
+  var REDUCED = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var SPRING = { type: 'spring', visualDuration: 0.3, bounce: 0.16 };
+  function pop(el, from, opts) {                      // spring an element into its resting place
+    if (!MO || REDUCED || !el) return;
+    MO.animate(el, Object.assign({ opacity: [0, 1] }, from || { scale: [0.96, 1], y: [8, 0] }), opts || SPRING)
+      .then(function () { el.style.transform = ''; el.style.opacity = ''; });   // hand back to CSS (hover etc.)
+  }
+  function popOut(el, to, done) {
+    if (!MO || REDUCED || !el) { done(); return; }
+    MO.animate(el, Object.assign({ opacity: 0 }, to || {}), { duration: 0.2, ease: 'easeIn' }).then(done);
+  }
+
+  var LAYOUT_ANIM = { raf: 0, ctl: null, anchor: null, off: 0, touched: [] }, LAYOUT_MS = 280;
   function stopLayoutAnim() {
     if (LAYOUT_ANIM.raf) { cancelAnimationFrame(LAYOUT_ANIM.raf); LAYOUT_ANIM.raf = 0; }
+    if (LAYOUT_ANIM.ctl) { LAYOUT_ANIM.ctl.stop(); LAYOUT_ANIM.ctl = null; }
     LAYOUT_ANIM.touched.forEach(function (el) { el.style.opacity = ''; });
     LAYOUT_ANIM.touched = [];
   }
   function layout() {
-    var animate = !LAYOUT_ANIM.off && !(typeof drag !== 'undefined' && drag) &&
+    var animate = !LAYOUT_ANIM.off && !REDUCED && !(typeof drag !== 'undefined' && drag) &&
                   NODES.some(function (n) { return n.x != null && n.el && n.el.style.display !== 'none'; });
     var prev = {};
     if (animate) NODES.forEach(function (n) {           // where things are NOW (mid-animation counts)
@@ -1300,14 +1317,13 @@
     if (anchor && aY0 != null && !isHidden(anchor)) camTo = camY0 - (anchor.y - aY0) * cam.z;
     if (!items.length && camTo === camY0) return;
 
-    var t0 = performance.now();
-    function frame(now) {
-      var k = Math.min(1, (now - t0) / LAYOUT_MS), e = 1 - Math.pow(1 - k, 3);   // ease-out
+    // e = how far along (a spring may overshoot 1 a touch), k = the same clamped to 0..1 for fades
+    function step(e, k) {
       items.forEach(function (it) {
         var n = it.n, x = it.from.x + (it.to.x - it.from.x) * e, y = it.from.y + (it.to.y - it.from.y) * e;
         n.x = x; n.y = y;
         n.el.style.left = x + 'px'; n.el.style.top = y + 'px';
-        var op = !it.vis ? 1 - e : !it.was ? e : null;
+        var op = !it.vis ? 1 - k : !it.was ? k : null;
         if (op != null) {
           n.el.style.display = ''; n.el.style.opacity = op; LAYOUT_ANIM.touched.push(n.el);
         }
@@ -1320,17 +1336,46 @@
       if (annoList.length) layoutAnnos();
       drawConns();
       if (camTo !== camY0) { cam.y = camY0 + (camTo - camY0) * e; apply(false); }
-      if (k < 1) { LAYOUT_ANIM.raf = requestAnimationFrame(frame); return; }
-      LAYOUT_ANIM.raf = 0;                               // settle exactly on the final layout
+    }
+    function settle() {                                  // land exactly on the final layout
+      LAYOUT_ANIM.raf = 0; LAYOUT_ANIM.ctl = null;
       items.forEach(function (it) {
         it.n.x = it.to.x; it.n.y = it.to.y;
         if (!it.vis) { it.n.el.style.display = 'none'; if (it.n.fold) it.n.fold.style.display = 'none'; }
       });
+      if (camTo !== camY0) { cam.y = camTo; apply(false); }
       LAYOUT_ANIM.touched.forEach(function (el) { el.style.opacity = ''; }); LAYOUT_ANIM.touched = [];
       drawEdges(); layoutAnnos(); drawConns();
     }
+    if (MO) {                                            // a soft spring: branches settle, not stop dead
+      LAYOUT_ANIM.ctl = MO.animate(0, 1, { type: 'spring', visualDuration: 0.32, bounce: 0.12,
+        onUpdate: function (v) { step(v, Math.max(0, Math.min(1, v))); }, onComplete: settle });
+      return;
+    }
+    var t0 = performance.now();
+    function frame(now) {
+      var k = Math.min(1, (now - t0) / LAYOUT_MS), e = 1 - Math.pow(1 - k, 3);   // ease-out
+      step(e, k);
+      if (k < 1) { LAYOUT_ANIM.raf = requestAnimationFrame(frame); return; }
+      settle();
+    }
     LAYOUT_ANIM.raf = requestAnimationFrame(frame);
   }
+  (function () {
+    function watch(id, cardSel) {
+      var m = document.getElementById(id); if (!m) return;
+      new MutationObserver(function () {
+        if (m.hidden) return;
+        pop(m, {}, { duration: 0.16 });
+        pop(m.querySelector(cardSel), { scale: [0.95, 1], y: [10, 0] });
+      }).observe(m, { attributes: true, attributeFilter: ['hidden'] });
+    }
+    ['exportModal', 'importModal', 'sessModal'].forEach(function (id) { watch(id, '.xcard'); });
+    watch('helpScrim', '.helppanel'); watch('scrim', '.pal');
+    var sp = document.getElementById('spkPop');
+    if (sp) new MutationObserver(function () { if (!sp.hidden) pop(sp, { scale: [0.96, 1], y: [-6, 0] }); })
+      .observe(sp, { attributes: true, attributeFilter: ['hidden'] });
+  })();
   function layoutNow() {
     ROOT.h = 0;
     NODES.forEach(ensureEl);
@@ -2002,7 +2047,11 @@
     });
     // drag the note body to move it (or, when collapsed to a dot, click to expand)
     el.addEventListener('pointerdown', function (ev) {
-      if (el.classList.contains('collapsed')) { ev.stopPropagation(); note.expanded = true; updateCollapse(note); drawConns(); return; }
+      if (el.classList.contains('collapsed')) {
+        ev.stopPropagation(); note.expanded = true; updateCollapse(note); drawConns();
+        el.style.transformOrigin = '8px 8px'; pop(el, { scale: [0.5, 1] }, { type: 'spring', visualDuration: 0.28, bounce: 0.25 });
+        return;
+      }
       if (ev.target.closest('.pdot,.pn-corner,.pn-del')) return;
       if (grabNote(el, ev, tx, note, drawConns, function (moved) { noteBusy = false; if (moved) scheduleFileSave(); })) noteBusy = true;
     });
@@ -3150,6 +3199,7 @@
       '</span></span>' + esc(note.text);
     el.addEventListener('click', function () { select(note.id); dismiss(el); });
     toasts.appendChild(el);
+    if (MO && !REDUCED) { el.style.animation = 'none'; pop(el, { x: [24, 0], scale: [0.97, 1] }); }
     // keep at most 3 visible. Count only toasts not already fading out: dismiss() is a no-op
     // on a fading one, so looping on children.length spun forever and froze the whole tab.
     var showing = [].filter.call(toasts.children, function (t) { return !t.classList.contains('out'); });
@@ -3159,6 +3209,7 @@
   function dismiss(el) {
     if (!el || el.classList.contains('out')) return;
     el.classList.add('out');
+    if (MO && !REDUCED) { el.style.transition = 'none'; popOut(el, { x: 16 }, function () { el.remove(); }); return; }
     setTimeout(function () { el.remove(); }, 320);
   }
   function notify(note) {
