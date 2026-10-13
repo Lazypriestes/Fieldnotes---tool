@@ -184,7 +184,9 @@
   .sticky .top .sp{flex:1}
   .sticky .del{color:#B3A76D;font-size:12px;line-height:1;padding:0 2px}
   .sticky .del:hover{color:#8A7C3C}
-  .sticky .tx{padding:0 9px;font-size:12px;line-height:1.4;color:#4A4526;outline:none;min-height:34px}
+  .sticky .tx:focus{cursor:text}
+  .sticky.grabbing,.sticky.grabbing *{cursor:grabbing!important}
+  .sticky .tx{cursor:grab;padding:0 9px;font-size:12px;line-height:1.4;color:#4A4526;outline:none;min-height:34px}
   .sticky .tx:empty:before{content:attr(data-ph);color:#BCB183}
 
   .zoomctl{position:absolute;left:12px;top:12px;display:flex;align-items:center;gap:1px;background:var(--surface);
@@ -328,7 +330,16 @@
   .pnote.collapsed > *{display:none!important}
   .pnote.collapsed:hover{transform:scale(1.18)}
   .conn.faint{stroke:#8B5CF6;opacity:.42;stroke-width:1.3}
-  .pnote .pn-tx{outline:none;min-height:20px}
+  .pnote{padding-top:17px}
+  .pnote.collapsed{padding:0}
+  .pnote .pn-grip{position:absolute;left:0;right:42px;top:0;height:16px;cursor:grab;border-radius:7px 0 0 0;
+    display:flex;align-items:center;justify-content:center}
+  .pnote .pn-grip:before{content:"";width:22px;height:5px;opacity:.45;transition:opacity .12s;
+    background:radial-gradient(circle,#B0A46A 1.1px,transparent 1.4px) 0 0/5.5px 5px}
+  .pnote:hover .pn-grip:before{opacity:1}
+  .pnote.grabbing,.pnote.grabbing *{cursor:grabbing!important}
+  .pnote .pn-tx{outline:none;min-height:20px;cursor:grab}
+  .pnote .pn-tx:focus{cursor:text}
   .pnote .pn-tx:empty:before{content:attr(data-ph);color:#BCB183}
   .pnote .pn-corner,.pnote .pn-del{position:absolute;top:3px;width:17px;height:17px;border-radius:4px;
     display:flex;align-items:center;justify-content:center;color:#B0A46A;opacity:0;transition:opacity .12s}
@@ -1900,6 +1911,35 @@
     if (note) { note.links = note.links.filter(function (q) { return q !== hit.dataset.q; }); drawConns(); scheduleFileSave(); }
   });
 
+  // move a note by grabbing it anywhere: its edge, its top strip, or its text while you're not
+  // typing in it. A press that doesn't move is a click: it starts typing, caret where you clicked.
+  function grabNote(el, ev, tx, pos, onMove, onDone) {
+    if (tx.contains(ev.target) && document.activeElement === tx) return false;   // typing: select text
+    ev.stopPropagation(); ev.preventDefault();
+    var s0 = toWorld(ev.clientX, ev.clientY), x0 = pos.x, y0 = pos.y, cx = ev.clientX, cy = ev.clientY, moved = false;
+    try { el.setPointerCapture(ev.pointerId); } catch (_e) {}
+    function mv(e2) {
+      if (!moved && Math.abs(e2.clientX - cx) < 4 && Math.abs(e2.clientY - cy) < 4) return;
+      if (!moved) { moved = true; el.classList.add('grabbing'); }
+      var p = toWorld(e2.clientX, e2.clientY);
+      pos.x = x0 + (p.x - s0.x); pos.y = y0 + (p.y - s0.y);
+      el.style.left = pos.x + 'px'; el.style.top = pos.y + 'px'; if (onMove) onMove();
+    }
+    function up() {
+      el.classList.remove('grabbing');
+      el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
+      if (!moved) {
+        tx.focus();
+        var r = document.caretRangeFromPoint && document.caretRangeFromPoint(cx, cy), sel = getSelection();
+        if (r && tx.contains(r.startContainer)) { sel.removeAllRanges(); sel.addRange(r); }
+        else { sel.selectAllChildren(tx); sel.collapseToEnd(); }
+      }
+      if (onDone) onDone(moved);
+    }
+    el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+    return true;
+  }
+
   function wireNote(note) {
     var el = note.el, tx = el.querySelector('.pn-tx');
     tx.addEventListener('blur', function () { note.text = tx.textContent; scheduleFileSave(); });
@@ -1963,19 +2003,8 @@
     // drag the note body to move it (or, when collapsed to a dot, click to expand)
     el.addEventListener('pointerdown', function (ev) {
       if (el.classList.contains('collapsed')) { ev.stopPropagation(); note.expanded = true; updateCollapse(note); drawConns(); return; }
-      if (ev.target.closest('.pdot,.pn-corner,.pn-del,.pn-tx')) return;
-      ev.stopPropagation();
-      var s0 = toWorld(ev.clientX, ev.clientY), x0 = note.x, y0 = note.y, moved = false;
-      try { el.setPointerCapture(ev.pointerId); } catch (_e) {}; el.classList.add('grabbing'); noteBusy = true;
-      function mv(e2) {
-        var p = toWorld(e2.clientX, e2.clientY);
-        if (!moved && Math.abs(p.x - s0.x) < 3 && Math.abs(p.y - s0.y) < 3) return;
-        moved = true;
-        note.x = x0 + (p.x - s0.x); note.y = y0 + (p.y - s0.y);
-        el.style.left = note.x + 'px'; el.style.top = note.y + 'px'; drawConns();
-      }
-      function up() { noteBusy = false; el.classList.remove('grabbing'); el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); if (moved) scheduleFileSave(); else el.querySelector('.pn-tx').focus(); }
-      el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up);
+      if (ev.target.closest('.pdot,.pn-corner,.pn-del')) return;
+      if (grabNote(el, ev, tx, note, drawConns, function (moved) { noteBusy = false; if (moved) scheduleFileSave(); })) noteBusy = true;
     });
   }
 
@@ -1988,6 +2017,7 @@
     el.innerHTML =
       '<button class="pn-corner" title="' + (note.mm ? 'On the mind map only — click to show everywhere' : 'Show only on the mind map') + '"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2"/><circle cx="3" cy="3.5" r="1.3"/><circle cx="13" cy="3.5" r="1.3"/><circle cx="3" cy="12.5" r="1.3"/><circle cx="13" cy="12.5" r="1.3"/><path d="M6.5 6.6 4 4.2M9.5 6.6 12 4.2M6.5 9.4 4 11.8M9.5 9.4 12 11.8"/></svg></button>' +
       '<button class="pn-del" title="Delete note">×</button>' +
+      '<span class="pn-grip" title="Drag to move"></span>' +
       '<div class="pn-tx" contenteditable="true" spellcheck="false" data-ph="Type a note…">' + esc(note.text) + '</div>' +
       '<span class="pdot t"></span><span class="pdot r"></span><span class="pdot b"></span><span class="pdot l"></span>';
     note.el = el; world.appendChild(el);
@@ -2629,17 +2659,8 @@
       stickies = stickies.filter(function (s) { return s !== st; }); updateCount();
     });
     el.addEventListener('pointerdown', function (ev) {
-      if (ev.target.closest('.tx,.del')) return;
-      ev.stopPropagation();
-      var s0 = toWorld(ev.clientX, ev.clientY), x0 = st.x, y0 = st.y;
-      el.classList.add('grabbing'); try { el.setPointerCapture(ev.pointerId); } catch (_e) {};
-      function mv(e2) {
-        var p = toWorld(e2.clientX, e2.clientY);
-        st.x = x0 + (p.x - s0.x); st.y = y0 + (p.y - s0.y);
-        el.style.left = st.x + 'px'; el.style.top = st.y + 'px';
-      }
-      function up() { el.classList.remove('grabbing'); el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); }
-      el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up);
+      if (ev.target.closest('.del')) return;
+      grabNote(el, ev, el.querySelector('.tx'), st);
     });
     updateCount();
     setTimeout(function () { el.querySelector('.tx').focus(); }, 30);
