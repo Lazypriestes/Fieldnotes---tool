@@ -134,7 +134,7 @@
   .fold{position:absolute;display:flex;align-items:center;justify-content:center;gap:3px;height:19px;
     padding:0 7px;border:1px solid var(--line);border-radius:20px;background:var(--surface);
     font-family:ui-monospace,Menlo,monospace;font-size:9.5px;color:var(--muted);z-index:2;
-    transition:top .4s cubic-bezier(.35,.05,.15,1),left .4s cubic-bezier(.35,.05,.15,1)}
+    transition:border-color .15s,color .15s}   /* no position transition: it moves with its node, frame by frame */
   .fold:hover{border-color:var(--muted);color:var(--ink)}
   .fold svg{width:7px;height:7px;transition:transform .18s}
   .fold[aria-expanded="true"] svg{transform:rotate(90deg)}
@@ -143,7 +143,7 @@
     border:1px dashed #CFD4D7;border-radius:6px;color:var(--faint);
     font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.08em;
     background:rgba(255,255,255,.6);opacity:.55;
-    transition:top .4s cubic-bezier(.35,.05,.15,1),opacity .15s,border-color .15s}
+    transition:opacity .15s,border-color .15s}
   .editing .ghost{display:flex}
   .ghost:hover{opacity:1;border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 
@@ -166,8 +166,7 @@
 
   .anode{position:absolute;width:250px;background:var(--surface);border:1px solid var(--line);
     border-left:2px solid var(--green);border-radius:5px;padding:7px 9px;font-size:11px;line-height:1.45;
-    color:#3F474C;box-shadow:0 10px 26px -16px rgba(21,24,27,.5);animation:slip .3s ease;
-    transition:top .4s cubic-bezier(.35,.05,.15,1)}
+    color:#3F474C;box-shadow:0 10px 26px -16px rgba(21,24,27,.5);animation:slip .3s ease}
   .anode .m{display:flex;gap:6px;align-items:baseline;font-family:ui-monospace,Menlo,monospace;
     font-size:9px;letter-spacing:.07em;color:var(--faint);margin-bottom:3px}
   .anode .m .src{margin-left:auto;color:#B7BDC1}
