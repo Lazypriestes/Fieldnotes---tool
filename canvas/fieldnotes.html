@@ -325,7 +325,7 @@
   .pnote.mm{border-left:3px solid #8B5CF6}
   .pnote.collapsed{width:16px;height:16px;min-height:0;padding:0;border:2px solid var(--surface);border-radius:50%;
     background:#8B5CF6;box-shadow:0 3px 9px -2px rgba(139,92,246,.6);cursor:pointer;overflow:visible;
-    transition:width .12s,height .12s}
+    transition:transform .15s}
   .pnote.collapsed > *{display:none!important}
   .pnote.collapsed:hover{transform:scale(1.18)}
   .conn.faint{stroke:#8B5CF6;opacity:.42;stroke-width:1.3}
@@ -1925,8 +1925,45 @@
 
   /* ================= page notes: connectable canvas notes ================= */
   var conns = $('conns'), noteBusy = false;
-  function updateCollapse(note) {                          // mm note off the mind map = a purple dot
-    note.el.classList.toggle('collapsed', note.mm && layerName !== 'mindmap' && !note.expanded);
+  function updateCollapse(note, animate) {                 // mm note off the mind map = a purple dot
+    var want = note.mm && layerName !== 'mindmap' && !note.expanded;
+    if (note.morph) { note.morph.stop(); note.morph = null; endMorph(note); }
+    if (want === note.el.classList.contains('collapsed')) return;
+    if (animate && MO && !REDUCED && note.el.offsetParent) morphNote(note, want);
+    else note.el.classList.toggle('collapsed', want);
+  }
+  // card <-> dot: the text fades first, then the card shrinks into the dot (and grows back out
+  // of it the other way round) on a soft spring; connectors follow every frame
+  function rgbOf(c) { var m = String(c).match(/[\d.]+/g) || [0, 0, 0]; return [+m[0], +m[1], +m[2]]; }
+  function morphNote(note, collapse) {
+    var el = note.el, kids = [].filter.call(el.children, function (c) { return !c.classList.contains('pdot'); });
+    el.classList.remove('collapsed'); el.style.overflow = 'hidden'; el.style.minHeight = '0';
+    var cs = getComputedStyle(el);
+    var card = { w: el.offsetWidth, h: el.offsetHeight, r: parseFloat(cs.borderTopLeftRadius) || 7, bg: rgbOf(cs.backgroundColor),
+                 pad: [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].map(parseFloat) };
+    var dot = { w: 16, h: 16, r: 8, bg: [139, 92, 246], pad: [0, 0, 0, 0] };
+    var A = collapse ? card : dot, B = collapse ? dot : card;
+    function L(a, b, q) { return a + (b - a) * q; }
+    function frame(t) {
+      var q = collapse ? Math.max(0, (t - 0.15) / 0.85) : Math.min(t / 0.8, Math.max(1, t)), qc = Math.min(1, q);   // only the spring's own overshoot goes past 1
+      var fade = collapse ? Math.max(0, 1 - t / 0.3) : Math.min(1, Math.max(0, (t - 0.55) / 0.45));
+      el.style.width = Math.max(6, L(A.w, B.w, q)) + 'px'; el.style.height = Math.max(6, L(A.h, B.h, q)) + 'px';
+      el.style.padding = A.pad.map(function (v, i) { return Math.max(0, L(v, B.pad[i], qc)) + 'px'; }).join(' ');
+      el.style.borderRadius = L(A.r, B.r, qc) + 'px';
+      el.style.background = 'rgb(' + A.bg.map(function (v, i) { return Math.round(L(v, B.bg[i], qc)); }).join(',') + ')';
+      kids.forEach(function (k) { k.style.opacity = fade; });
+      drawConns();
+    }
+    frame(0);
+    note.morphTo = collapse;
+    note.morph = MO.animate(0, 1, { type: 'spring', visualDuration: collapse ? 0.34 : 0.38, bounce: 0.14,
+      onUpdate: frame, onComplete: function () { note.morph = null; endMorph(note); drawConns(); } });
+  }
+  function endMorph(note) {                                // land on the class-styled end state
+    var el = note.el;
+    ['width', 'height', 'padding', 'borderRadius', 'background', 'overflow', 'minHeight'].forEach(function (k) { el.style[k] = ''; });
+    [].forEach.call(el.children, function (k) { k.style.opacity = ''; });
+    el.classList.toggle('collapsed', !!note.morphTo);
   }
   function drawConns() {
     if (!conns) return;
@@ -1991,7 +2028,7 @@
     el.querySelector('.pn-corner').addEventListener('click', function (e) {
       e.stopPropagation(); note.mm = !note.mm; note.expanded = false; el.classList.toggle('mm', note.mm);
       el.querySelector('.pn-corner').title = note.mm ? 'On the mind map only — click to show everywhere' : 'Show only on the mind map';
-      updateCollapse(note); drawConns(); scheduleFileSave();
+      updateCollapse(note, true); drawConns(); scheduleFileSave();
     });
     // collapsed purple dot: click to expand; it folds back to a dot only after the cursor has
     // been off the card for a moment (a brief slip off the edge or onto a connector dot no
@@ -2004,7 +2041,7 @@
       foldTimer = setTimeout(function () {
         if (document.activeElement && el.contains(document.activeElement)) return;
         if (el.matches(':hover') || noteBusy) return;
-        note.expanded = false; updateCollapse(note); drawConns();
+        note.expanded = false; updateCollapse(note, true); drawConns();
       }, 700);
     });
     // the card animates between dot and full size: connectors follow once it has its final size
@@ -2047,8 +2084,7 @@
     // drag the note body to move it (or, when collapsed to a dot, click to expand)
     el.addEventListener('pointerdown', function (ev) {
       if (el.classList.contains('collapsed')) {
-        ev.stopPropagation(); note.expanded = true; updateCollapse(note); drawConns();
-        el.style.transformOrigin = '8px 8px'; pop(el, { scale: [0.5, 1] }, { type: 'spring', visualDuration: 0.28, bounce: 0.25 });
+        ev.stopPropagation(); note.expanded = true; updateCollapse(note, true); drawConns();
         return;
       }
       if (ev.target.closest('.pdot,.pn-corner,.pn-del')) return;
