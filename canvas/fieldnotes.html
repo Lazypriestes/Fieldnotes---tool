@@ -355,6 +355,8 @@
   .pdot.l{left:-6px;top:50%;margin-top:-5.5px} .pdot.r{right:-6px;top:50%;margin-top:-5.5px}
   :root[data-theme="dark"] .pnote{background:#2A2620;border-color:#4A4330;color:#E7DFC6}
   :root[data-theme="dark"] .pnote .pn-tx:empty:before{color:#8A805E}
+  .pnote.linktarget{border-color:var(--accent)!important;box-shadow:0 0 0 3px var(--accent-soft)!important}
+  .conn.nn{stroke:#B79B3C;stroke-dasharray:5 4;opacity:.85}
   .node.linktarget{border-color:var(--accent)!important;box-shadow:0 0 0 3px var(--accent-soft)}
 
   .transport{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:7;
@@ -1965,6 +1967,7 @@
     [].forEach.call(el.children, function (k) { k.style.opacity = ''; });
     el.classList.toggle('collapsed', !!note.morphTo);
   }
+  function noteById(id) { for (var i = 0; i < pageNotes.length; i++) if (pageNotes[i].id === id) return pageNotes[i]; return null; }
   function drawConns() {
     if (!conns) return;
     var parts = [];
@@ -1973,6 +1976,23 @@
       var w = collapsed ? 16 : (note.el.offsetWidth || 184), h = collapsed ? 16 : (note.el.offsetHeight || 46);
       var nx = note.x + w / 2, ny = note.y + h / 2;
       note.links.forEach(function (qid) {
+        var other = noteById(qid);
+        if (other) {                                      // note -> note: dashed, edge facing the source
+          if (!other.el.isConnected) return;
+          var oc = other.el.classList.contains('collapsed');
+          var ow = oc ? 16 : (other.el.offsetWidth || 184), oh = oc ? 16 : (other.el.offsetHeight || 46);
+          var bcx = other.x + ow / 2, bcy = other.y + oh / 2, d2;
+          if (Math.abs(bcx - nx) >= Math.abs(bcy - ny)) {
+            var ex = bcx > nx ? other.x : other.x + ow, sx = bcx > nx ? 1 : -1, ddx = Math.max(28, Math.abs(ex - nx) / 2);
+            d2 = 'M' + nx + ' ' + ny + ' C' + (nx + sx * ddx) + ' ' + ny + ',' + (ex - sx * ddx) + ' ' + bcy + ',' + ex + ' ' + bcy;
+          } else {
+            var ey = bcy > ny ? other.y : other.y + oh, sy = bcy > ny ? 1 : -1, ddy = Math.max(24, Math.abs(ey - ny) / 2);
+            d2 = 'M' + nx + ' ' + ny + ' C' + nx + ' ' + (ny + sy * ddy) + ',' + bcx + ' ' + (ey - sy * ddy) + ',' + bcx + ' ' + ey;
+          }
+          parts.push('<path class="conn-hit" data-note="' + note.id + '" data-q="' + qid + '" d="' + d2 + '"/>' +
+                     '<path class="conn nn' + (collapsed || oc ? ' faint' : '') + '" d="' + d2 + '"/>');
+          return;
+        }
         var n = INDEX[qid]; if (!n || isHidden(n) || n.x == null) return;
         var ncx = n.x + W[n.depth] / 2, ty = n.y + n.h / 2;
         var leftSide = nx < ncx;                          // anchor to the node edge facing the note
@@ -2051,9 +2071,17 @@
     el.querySelector('.pn-del').addEventListener('click', function (e) {
       e.stopPropagation(); el.remove();
       pageNotes = pageNotes.filter(function (p) { return p !== note; });
+      pageNotes.forEach(function (p) { p.links = p.links.filter(function (l) { return l !== note.id; }); });
       drawConns(); scheduleFileSave();
     });
-    // drag a side dot -> connect to a question node
+    // drag a side dot -> connect to a question node, or to another note
+    function dropTarget(x, y) {
+      var over = document.elementFromPoint(x, y); if (!over) return null;
+      var nd = over.closest('.node[data-id]'); if (nd) return { el: nd, id: nd.dataset.id };
+      var pn = over.closest('.pnote');
+      if (pn && pn !== el) { var o = pageNotes.filter(function (p) { return p.el === pn; })[0]; if (o) return { el: pn, id: o.id, note: o }; }
+      return null;
+    }
     el.querySelectorAll('.pdot').forEach(function (dot) {
       dot.addEventListener('pointerdown', function (ev) {
         ev.stopPropagation(); ev.preventDefault();
@@ -2063,18 +2091,17 @@
           var t = conns.querySelector('.conn.temp');
           if (!t) { t = document.createElementNS('http://www.w3.org/2000/svg', 'path'); t.setAttribute('class', 'conn temp'); conns.appendChild(t); }
           t.setAttribute('d', 'M' + ax + ' ' + ay + ' L' + p.x + ' ' + p.y);
-          var over = document.elementFromPoint(e2.clientX, e2.clientY);
-          document.querySelectorAll('.node.linktarget').forEach(function (m) { m.classList.remove('linktarget'); });
-          var nd = over && over.closest('.node[data-id]'); if (nd) nd.classList.add('linktarget');
+          document.querySelectorAll('.linktarget').forEach(function (m) { m.classList.remove('linktarget'); });
+          var tg = dropTarget(e2.clientX, e2.clientY); if (tg) tg.el.classList.add('linktarget');
         }
         function up(e2) {
           noteBusy = false;
           document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up);
           var t = conns.querySelector('.conn.temp'); if (t) t.remove();
-          document.querySelectorAll('.node.linktarget').forEach(function (m) { m.classList.remove('linktarget'); });
-          var over = document.elementFromPoint(e2.clientX, e2.clientY);
-          var nd = over && over.closest('.node[data-id]');
-          if (nd && note.links.indexOf(nd.dataset.id) < 0) { note.links.push(nd.dataset.id); scheduleFileSave(); }
+          document.querySelectorAll('.linktarget').forEach(function (m) { m.classList.remove('linktarget'); });
+          var tg = dropTarget(e2.clientX, e2.clientY);
+          var already = tg && (note.links.indexOf(tg.id) >= 0 || (tg.note && tg.note.links.indexOf(note.id) >= 0));
+          if (tg && !already) { note.links.push(tg.id); scheduleFileSave(); }
           drawConns();
         }
         noteBusy = true;
