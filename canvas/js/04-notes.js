@@ -146,7 +146,7 @@
   conns.addEventListener('click', function (e) {
     var hit = e.target.closest('.conn-hit'); if (!hit) return;
     var note = pageNotes.filter(function (p) { return p.id === hit.dataset.note; })[0];
-    if (note) { note.links = note.links.filter(function (q) { return q !== hit.dataset.q; }); drawConns(); scheduleFileSave(); }
+    if (note) { pushHistory(); note.links = note.links.filter(function (q) { return q !== hit.dataset.q; }); drawConns(); }
   });
 
   // move a note by grabbing it anywhere: its edge, its top strip, or its text while you're not
@@ -180,12 +180,16 @@
 
   function wireNote(note) {
     var el = note.el, tx = el.querySelector('.pn-tx');
-    tx.addEventListener('blur', function () { note.text = tx.textContent; scheduleFileSave(); });
+    tx.addEventListener('focus', function () { note.before = histSnap(); });
+    tx.addEventListener('blur', function () {
+      if (tx.textContent !== note.text && note.before) pushHistory(note.before);   // the edit is one undo step
+      note.before = null; note.text = tx.textContent; scheduleFileSave();
+    });
     tx.addEventListener('keydown', function (e) { if (e.key === 'Escape') tx.blur(); e.stopPropagation(); });
     // eye: keep the note open; eye-off: fold it into a purple dot (click the dot to peek)
     el.querySelector('.pn-corner').addEventListener('click', function (e) {
-      e.stopPropagation(); note.folded = !note.folded; note.expanded = false; paintEye(note);
-      updateCollapse(note, true); drawConns(); scheduleFileSave();
+      e.stopPropagation(); pushHistory(); note.folded = !note.folded; note.expanded = false; paintEye(note);
+      updateCollapse(note, true); drawConns();
     });
     // collapsed purple dot: click to expand; it folds back to a dot only after the cursor has
     // been off the card for a moment (a brief slip off the edge or onto a connector dot no
@@ -206,7 +210,7 @@
       if (ev.target === el && (ev.propertyName === 'width' || ev.propertyName === 'height')) drawConns();
     });
     el.querySelector('.pn-del').addEventListener('click', function (e) {
-      e.stopPropagation(); el.remove();
+      e.stopPropagation(); pushHistory(); el.remove();
       pageNotes = pageNotes.filter(function (p) { return p !== note; });
       pageNotes.forEach(function (p) { p.links = p.links.filter(function (l) { return l !== note.id; }); });
       drawConns(); scheduleFileSave();
@@ -215,7 +219,7 @@
     var rs = el.querySelector('.pn-rs');
     rs.addEventListener('pointerdown', function (ev) {
       ev.stopPropagation(); ev.preventDefault();
-      var s0 = toWorld(ev.clientX, ev.clientY), w0 = el.offsetWidth, h0 = el.offsetHeight;
+      var s0 = toWorld(ev.clientX, ev.clientY), w0 = el.offsetWidth, h0 = el.offsetHeight, before = histSnap();
       try { rs.setPointerCapture(ev.pointerId); } catch (_e) {}
       el.classList.add('resizing'); noteBusy = true;
       function mv(e2) {
@@ -226,12 +230,13 @@
       }
       function up() {
         rs.removeEventListener('pointermove', mv); rs.removeEventListener('pointerup', up); rs.removeEventListener('pointercancel', up);
-        el.classList.remove('resizing'); noteBusy = false; drawConns(); scheduleFileSave();
+        el.classList.remove('resizing'); noteBusy = false; drawConns();
+        if (el.offsetWidth !== w0 || el.offsetHeight !== h0) pushHistory(before); else scheduleFileSave();
       }
       rs.addEventListener('pointermove', mv); rs.addEventListener('pointerup', up); rs.addEventListener('pointercancel', up);
     });
     rs.addEventListener('dblclick', function (ev) {
-      ev.stopPropagation(); note.w = note.h = null; sizeNote(note); drawConns(); scheduleFileSave();
+      ev.stopPropagation(); pushHistory(); note.w = note.h = null; sizeNote(note); drawConns();
     });
     // drag a side dot -> connect to a question node, or to another note
     function dropTarget(x, y) {
@@ -244,7 +249,7 @@
     el.querySelectorAll('.pdot').forEach(function (dot) {
       dot.addEventListener('pointerdown', function (ev) {
         ev.stopPropagation(); ev.preventDefault();
-        var w = el.offsetWidth, h = el.offsetHeight, ax = note.x + w / 2, ay = note.y + h / 2;
+        var w = el.offsetWidth, h = el.offsetHeight, ax = note.x + w / 2, ay = note.y + h / 2, before = histSnap();
         function mv(e2) {
           var p = toWorld(e2.clientX, e2.clientY);
           var t = conns.querySelector('.conn.temp');
@@ -260,7 +265,7 @@
           document.querySelectorAll('.linktarget').forEach(function (m) { m.classList.remove('linktarget'); });
           var tg = dropTarget(e2.clientX, e2.clientY);
           var already = tg && (note.links.indexOf(tg.id) >= 0 || (tg.note && tg.note.links.indexOf(note.id) >= 0));
-          if (tg && !already) { note.links.push(tg.id); scheduleFileSave(); }
+          if (tg && !already) { pushHistory(before); note.links.push(tg.id); }
           drawConns();
         }
         noteBusy = true;
@@ -271,19 +276,25 @@
     el.addEventListener('pointerdown', function (ev) {
       if (el.classList.contains('collapsed')) {          // clicking the dot opens the note for good;
         ev.stopPropagation();                             // the eye folds it again
-        note.folded = false; note.expanded = false; paintEye(note);
-        updateCollapse(note, true); drawConns(); scheduleFileSave();
+        pushHistory(); note.folded = false; note.expanded = false; paintEye(note);
+        updateCollapse(note, true); drawConns();
         return;
       }
       if (ev.target.closest('.pdot,.pn-corner,.pn-del')) return;
-      if (grabNote(el, ev, tx, note, drawConns, function (moved) { noteBusy = false; if (moved) scheduleFileSave(); })) noteBusy = true;
+      var before = histSnap();
+      if (grabNote(el, ev, tx, note, drawConns, function (moved) {
+        noteBusy = false;
+        if (moved) { if (note.live) note.free = true; pushHistory(before); }   // you placed it: it stops following
+      })) noteBusy = true;
     });
   }
 
   function addPageNote(x, y, seed) {
+    if (!seed) pushHistory();
     var note = { id: (seed && seed.id) || ('pn' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36)),
       x: x, y: y, text: (seed && seed.text) || '', links: (seed && seed.links) ? seed.links.slice() : [],
-      folded: !!(seed && (seed.folded || seed.mm)), w: seed && seed.w, h: seed && seed.h, live: !!(seed && seed.live) };      // 'mm' = older files' "mind map only", now simply folded
+      folded: !!(seed && (seed.folded || seed.mm)), w: seed && seed.w, h: seed && seed.h, live: !!(seed && seed.live),
+      at: seed && seed.at || null, free: !!(seed && seed.free) };      // 'mm' = older files' "mind map only", now simply folded
     var el = document.createElement('div');
     el.className = 'pnote';
     el.style.left = x + 'px'; el.style.top = y + 'px';
@@ -304,7 +315,7 @@
     var p = toWorld(r.left + viewport.clientWidth / 2, r.top + viewport.clientHeight / 2);
     return addPageNote(p.x - 92, p.y - 24);
   }
-  function serializeNote(n) { return { id: n.id, x: n.x, y: n.y, text: n.text, folded: !!n.folded, links: n.links, w: n.w || undefined, h: n.h || undefined, live: n.live || undefined }; }
+  function serializeNote(n) { return { id: n.id, x: n.x, y: n.y, text: n.text, folded: !!n.folded, links: n.links, w: n.w || undefined, h: n.h || undefined, live: n.live || undefined, at: n.at || undefined, free: n.free || undefined }; }
   // size lives in CSS variables, so the folded-dot style (a fixed 16px) still wins over it
   function sizeNote(note) {
     if (note.w) note.el.style.setProperty('--pw', note.w + 'px'); else note.el.style.removeProperty('--pw');

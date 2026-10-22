@@ -197,11 +197,9 @@
   // asked; not linked to it. Click it to read the note. The timeline mark stays the record.
   function dropLiveNoteDot(text) {
     var q = INDEX[current]; if (!q || q.y == null) return;
-    var x = VTL_X - 50, y = q.y + q.h / 2 - 9;
-    pageNotes.forEach(function (p) {                     // several notes on one question: line up to the left
-      if (p.live && Math.abs(p.y - y) < 20 && p.x <= x + 4) x = Math.min(x, p.x - 26);
-    });
-    var note = addPageNote(x, y, { text: text, folded: true, live: true });
+    pushHistory();
+    var note = addPageNote(VTL_X + LANE.note - 9, q.y + q.h / 2 - 9, { text: text, folded: true, live: true, at: q.id });
+    drawVTL();                                           // puts it on the notes lane, next to any others
     scheduleFileSave();
     pop(note.el, { scale: [0.3, 1] }, { type: 'spring', visualDuration: 0.3, bounce: 0.3 });
   }
@@ -212,6 +210,8 @@
      recorded parts, amber for answered ahead, green for added questions. Live note dots sit to
      its left. Click an event to scrub the bottom timeline to that moment. */
   var VTL_X = -70, vtl = null;
+  // every mark has its own lane, a fixed distance from the line, so the gaps are always the same
+  var LANE = { tick0: 4, tick1: 12, clip: -8, ahead: -16, add: -24, note: -38, noteStep: 22 };
   function drawVTL() {
     vtl = vtl || world.querySelector('svg.vtl');          // the tree can draw before this file has run
     if (!vtl) {
@@ -225,8 +225,10 @@
         seekIdx(+g.getAttribute('data-idx'), false);
       });
     }
+    if (VTL_X === undefined) return;
+    placeNoteDots();
     var sess = mmSession();
-    if (VTL_X === undefined || !sess || sess.lastIdx < 0 || !topics().length || topics()[0].y == null) { vtl.innerHTML = ''; return; }
+    if (!sess || sess.lastIdx < 0 || !topics().length || topics()[0].y == null) { vtl.innerHTML = ''; return; }
     function yOf(id) { var n = mmVisibleAnchor(id); return n && n.y != null ? n.y + n.h / 2 : null; }
     function at(i) { return fmtTime(sess.tbase + (i > 0 ? sess.cum[i - 1] : 0) / 1000); }
     function tip(t) { return '<title>' + esc(t) + '</title>'; }
@@ -241,7 +243,7 @@
       prev = c; var y = yOf(c); if (y == null) continue;
       ys.push(y);
       p.push('<g class="hit" data-idx="' + i + '">' + tip(mmQLabel(INDEX[c]) + ' asked · ' + at(i)) +
-        '<rect x="' + (x + 1) + '" y="' + (y - 5) + '" width="16" height="10"/><line class="tk" x1="' + (x + 3) + '" y1="' + y + '" x2="' + (x + 13) + '" y2="' + y + '"/></g>');
+        '<rect x="' + (x + 1) + '" y="' + (y - 5) + '" width="15" height="10"/><line class="tk" x1="' + (x + LANE.tick0) + '" y1="' + y + '" x2="' + (x + LANE.tick1) + '" y2="' + y + '"/></g>');
     }
     sess.clips.forEach(function (cl) {                    // recorded parts: red bars left of the line
       var i0 = -1, i1 = -1;
@@ -250,13 +252,13 @@
       var a = yOf(mmCurAt(sess, i0)), b = yOf(mmCurAt(sess, i1)); if (a == null || b == null) return;
       var y0 = Math.min(a, b) - 2, h = Math.max(4, Math.abs(b - a) + 4);
       p.push('<g class="hit" data-idx="' + i0 + '">' + tip('Recorded ' + fmtTime(sess.tbase + cl.startMs / 1000) + '–' + fmtTime(sess.tbase + cl.endMs / 1000)) +
-        '<rect class="pad" x="' + (x - 10) + '" y="' + (y0 - 3) + '" width="8" height="' + (h + 6) + '"/>' +
-        '<rect class="clip" x="' + (x - 6.75) + '" y="' + y0 + '" width="1.5" height="' + h + '" rx=".75"/></g>');
+        '<rect class="pad" x="' + (x + LANE.clip - 4) + '" y="' + (y0 - 3) + '" width="8" height="' + (h + 6) + '"/>' +
+        '<rect class="clip" x="' + (x + LANE.clip - 0.75) + '" y="' + y0 + '" width="1.5" height="' + h + '" rx=".75"/></g>');
     });
     (sess.ahead || []).forEach(function (n) {             // answered ahead: amber diamond, at the moment it happened
       if (n.idx > last) return;
       var y = yOf(n.at); if (y == null) return;
-      var cx = x - 14, r = 2.4;                           // left of the line; click = go to that question
+      var cx = x + LANE.ahead, r = 2.4;                    // left of the line; click = go to that question
       p.push('<g class="hit" data-jump="' + n.id + '">' + tip('Answered ahead: ' + n.label + ' — click to go there') +
         '<circle class="pad" cx="' + cx + '" cy="' + y + '" r="7"/>' +
         '<path class="ahead" d="M' + cx + ' ' + (y - r) + ' L' + (cx + r) + ' ' + y + ' L' + cx + ' ' + (y + r) + ' L' + (cx - r) + ' ' + y + 'Z"/></g>');
@@ -265,7 +267,7 @@
       if (!m.q || m.idx > last) return;
       var y = yOf(mmCurAt(sess, m.idx)); if (y == null) return;
       p.push('<g class="hit" data-idx="' + m.idx + '">' + tip('Question added: ' + m.text) +
-        '<circle class="add" cx="' + (x + 32) + '" cy="' + y + '" r="3.5"/></g>');
+        '<circle class="pad" cx="' + (x + LANE.add) + '" cy="' + y + '" r="6"/><circle class="add" cx="' + (x + LANE.add) + '" cy="' + y + '" r="2.4"/></g>');
     });
     // from the first question asked to the one being asked now (or the furthest reached,
     // if the interview went back up the tree)
@@ -273,6 +275,31 @@
     if (yEnd == null) yEnd = ys.length ? ys[ys.length - 1] : 0;
     if (live) p.push('<circle class="nowring" cx="' + x + '" cy="' + yEnd + '" r="6"/><circle class="now" cx="' + x + '" cy="' + yEnd + '" r="4.5"/>');
     vtl.innerHTML = p.join('');
+  }
+
+  function placeNoteDots() {
+    // live note dots ride the notes lane, level with their question, side by side when there are
+    // several. Folding the tree moves them with it. Drag one to place it yourself.
+    var stack = {}, moved = false, adopted = false;
+    pageNotes.forEach(function (n) {
+      if (!n.live || n.free) return;
+      if (!n.at || !INDEX[n.at]) { n.at = nearestQuestion(n.y + 9); adopted = true; }   // older dots
+      var an = mmVisibleAnchor(n.at); if (!an || an.y == null) return;
+      var y = an.y + an.h / 2;
+      var k = stack[an.id] || 0; stack[an.id] = k + 1;     // per visible spot, so folded questions' dots don't overlap
+      var nx = VTL_X + LANE.note - 9 - k * LANE.noteStep, ny = y - 9;
+      if (n.x !== nx || n.y !== ny) { n.x = nx; n.y = ny; n.el.style.left = nx + 'px'; n.el.style.top = ny + 'px'; moved = true; }
+    });
+    if (moved) drawConns();
+    if (adopted) scheduleFileSave();
+  }
+  function nearestQuestion(y) {
+    var best = null, bd = 1e9;
+    NODES.forEach(function (n) {
+      if (n.depth < 1 || isHidden(n) || n.y == null) return;
+      var d = Math.abs(n.y + n.h / 2 - y); if (d < bd) { bd = d; best = n.id; }
+    });
+    return best;
   }
 
   function topicOf(n) { while (n && n.depth > 0) n = n.parent; return (n && n.id !== '_root') ? n : topics()[0]; }

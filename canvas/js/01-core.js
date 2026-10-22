@@ -66,8 +66,12 @@
   function ser(n) { return { i: n.id, k: n.kind, t: n.text, m: n.mins, c: n.collapsed, cu: n.cues, ak: n.asks, ad: n.added || undefined,
     sv: n.sensManual ? n.sens : undefined, cm: n.cuesMine, am: n.asksMine, ch: n.children.map(ser) }; }
   function snap() { return JSON.stringify(ROOT.children.map(ser)); }
+  // one undo history for the tree AND the page notes: each entry holds both
+  function histSnap(tree) { return JSON.stringify({ t: tree || snap(), n: pageNotes.map(serializeNote) }); }
   function pushHistory(before) {
-    undoStack.push(before === undefined ? snap() : before);
+    if (before === undefined) before = histSnap();
+    else if (before.charAt(0) === '[') before = histSnap(before);   // a tree-only snapshot taken before an edit
+    undoStack.push(before);
     if (undoStack.length > 60) undoStack.shift();
     redoStack.length = 0;
     scheduleFileSave();
@@ -111,15 +115,22 @@
     if (selected && INDEX[selected]) select(selected, false);
     else { selected = null; drawInspector(); }
   }
+  function restoreHist(h) {
+    var d = JSON.parse(h);
+    if (Array.isArray(d)) { restore(h); return; }
+    if (d.t !== snap()) restore(d.t);
+    if (JSON.stringify(pageNotes.map(serializeNote)) !== JSON.stringify(d.n)) rebuildPageNotes(d.n);
+    scheduleFileSave();
+  }
   function undo() {
     if (!undoStack.length) return;
-    redoStack.push(snap());
-    restore(undoStack.pop());
+    redoStack.push(histSnap());
+    restoreHist(undoStack.pop());
   }
   function redo() {
     if (!redoStack.length) return;
-    undoStack.push(snap());
-    restore(redoStack.pop());
+    undoStack.push(histSnap());
+    restoreHist(redoStack.pop());
   }
 
   Object.keys(TREE).forEach(function (k) {
