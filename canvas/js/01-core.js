@@ -18,6 +18,10 @@
   editBtn = editBtn || _stub; followBtn = followBtn || _stub;
   hint = hint || _stub; countEl = countEl || _stub;
   legendLive = legendLive || _stub; posLabel = posLabel || _stub;   // the bottom legend bar is gone too
+  // the recording menu rides just above the captions card, whatever its height
+  if (window.ResizeObserver) new ResizeObserver(function () {
+    app.style.setProperty('--capsH', (caps.offsetHeight + 12) + 'px');
+  }).observe(caps);
 
   var ICON_PLAY = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3l8 5-8 5z" fill="currentColor"/></svg>';
   var ICON_STOP = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1.6" fill="currentColor"/></svg>';

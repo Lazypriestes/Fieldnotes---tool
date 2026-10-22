@@ -283,7 +283,7 @@
   function addPageNote(x, y, seed) {
     var note = { id: (seed && seed.id) || ('pn' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36)),
       x: x, y: y, text: (seed && seed.text) || '', links: (seed && seed.links) ? seed.links.slice() : [],
-      folded: !!(seed && (seed.folded || seed.mm)), w: seed && seed.w, h: seed && seed.h };      // 'mm' = older files' "mind map only", now simply folded
+      folded: !!(seed && (seed.folded || seed.mm)), w: seed && seed.w, h: seed && seed.h, live: !!(seed && seed.live) };      // 'mm' = older files' "mind map only", now simply folded
     var el = document.createElement('div');
     el.className = 'pnote';
     el.style.left = x + 'px'; el.style.top = y + 'px';
@@ -304,7 +304,7 @@
     var p = toWorld(r.left + viewport.clientWidth / 2, r.top + viewport.clientHeight / 2);
     return addPageNote(p.x - 92, p.y - 24);
   }
-  function serializeNote(n) { return { id: n.id, x: n.x, y: n.y, text: n.text, folded: !!n.folded, links: n.links, w: n.w || undefined, h: n.h || undefined }; }
+  function serializeNote(n) { return { id: n.id, x: n.x, y: n.y, text: n.text, folded: !!n.folded, links: n.links, w: n.w || undefined, h: n.h || undefined, live: n.live || undefined }; }
   // size lives in CSS variables, so the folded-dot style (a fixed 16px) still wins over it
   function sizeNote(note) {
     if (note.w) note.el.style.setProperty('--pw', note.w + 'px'); else note.el.style.removeProperty('--pw');

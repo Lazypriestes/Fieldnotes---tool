@@ -278,7 +278,7 @@
       });
     }
     pageNotes.forEach(function (n) {
-      if (!(n.text || '').trim()) return;
+      if (!(n.text || '').trim() || (n.live && sess)) return;   // live dots are the timeline notes again
       var d = null, qid = null;
       n.links.some(function (l) { d = dOf(l); qid = l; return !!d; });
       if (d) { (d.qnotes[qid] = d.qnotes[qid] || []).push({ text: n.text }); d.nNotes++; } else loose.push({ text: n.text });

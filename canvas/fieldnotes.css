@@ -363,7 +363,7 @@
     display:flex;align-items:center;gap:13px;padding:7px 17px;
     background:rgba(255,255,255,.98);border:1px solid var(--line);border-radius:22px;
     box-shadow:0 16px 38px -18px rgba(21,24,27,.45);transition:bottom .25s ease}
-  .app.live .transport{bottom:182px}
+  .app.live .transport{bottom:calc(var(--capsH, 160px) + 24px)}   /* sits just above the captions card */
   .transport button{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
     color:var(--muted);border:1px solid transparent}
   .transport button:hover{background:rgba(0,0,0,.05);color:var(--ink)}
@@ -544,10 +544,12 @@
   @keyframes slidein{from{opacity:0;transform:translateX(14px)}}
   @keyframes slip{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 
-  .caps{position:absolute;left:0;right:0;bottom:0;z-index:6;padding:10px 14px 9px;
-    /* no backdrop-filter: re-blurring a full-width strip every frame while the camera glides
+  /* captions + timeline: a floating card (not a full-width white band over the canvas) */
+  .caps{position:absolute;left:88px;right:16px;bottom:12px;z-index:6;padding:10px 14px 9px;
+    /* no backdrop-filter: re-blurring a wide strip every frame while the camera glides
        stalls the compositor when the GPU is shared with the live ML models */
-    background:rgba(255,255,255,.98);border-top:1px solid var(--hair);
+    background:rgba(255,255,255,.98);border:1px solid var(--line);border-radius:14px;
+    box-shadow:0 16px 38px -22px rgba(21,24,27,.45);
     display:flex;flex-direction:column;gap:4px}
   .caps[hidden]{display:none}
   .line{display:flex;gap:9px;align-items:baseline;line-height:1.4;animation:slip .25s ease}

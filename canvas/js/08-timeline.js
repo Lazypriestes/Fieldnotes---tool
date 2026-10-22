@@ -186,7 +186,24 @@
     });
     setTimeout(function () { tx.focus(); }, 30);
   }
-  function addLiveNote() { composer('NOTE', '', 'Type a note — it saves to the timeline', function (t, idx) { addUserMark(idx, t); }); }
+  function addLiveNote() {
+    composer('NOTE', '', 'Type a note — it saves to the timeline', function (t, idx) {
+      addUserMark(idx, t);
+      dropLiveNoteDot(t);
+    });
+  }
+  // a folded purple dot level with the question being asked, just right of the whole tree
+  // (not linked to it); click it to read the note. The timeline mark stays the record.
+  function dropLiveNoteDot(text) {
+    var q = INDEX[current]; if (!q || q.y == null) return;
+    var x = bounds.w + 56, y = q.y + q.h / 2 - 8;
+    pageNotes.forEach(function (p) {                     // several notes on one question: line up to the right
+      if (p.live && Math.abs(p.y - y) < 20 && p.x >= x - 4) x = Math.max(x, p.x + 28);
+    });
+    var note = addPageNote(x, y, { text: text, folded: true, live: true });
+    scheduleFileSave();
+    pop(note.el, { scale: [0.3, 1] }, { type: 'spring', visualDuration: 0.3, bounce: 0.3 });
+  }
 
   function topicOf(n) { while (n && n.depth > 0) n = n.parent; return (n && n.id !== '_root') ? n : topics()[0]; }
   function addQMark(idx, text) {
