@@ -4,14 +4,14 @@
   // recordings, notes, added questions, the tree) is saved to sessions/<id>.json every 10 s and
   // on stop. A session can be downloaded as one file, opened again from a file or from the list,
   // and — if the pipeline is still running after a reload — resumed live where it left off.
-  var SESS = { id: null, timer: null, lastSig: '', savedAt: null, err: null, last: null };
+  var SESS = { id: null, timer: null, lastSig: '', savedAt: null, err: null, last: null, title: null, planned: null };
   function sessionSnapshot() {
     var f = FILES.filter(function (x) { return x.id === ACTIVE; })[0] || {};
     var n = Math.max(0, liveIdx + 1);
     return {
       format: 'fieldnotes-session', version: 1, src: LIVE.src || null, demo: !liveReal,
-      session_id: LIVE.session || null,
-      tree: { name: f.name || 'Interview', data: snap(), notes: pageNotes.map(serializeNote) },
+      session_id: LIVE.session || null, title: SESS.title || null,
+      tree: { id: ACTIVE, name: f.name || 'Interview', data: snap(), notes: pageNotes.map(serializeNote) },
       steps: STEPS.slice(0, n).map(function (e) {
         return { w: e.w, raw: e.raw || null, t: e.t, a: !!e.a, tStart: e.tStart, tEnd: e.tEnd, seg_id: e.seg_id,
                  mark: e.mark || [], notes: e.notes || [], anno: e.anno || [], cur: e.cur || null };
@@ -74,7 +74,9 @@
     if (!d || d.format !== 'fieldnotes-session' || !Array.isArray(d.steps)) { sessMsg('That isn’t a Fieldnotes session file.', true); return false; }
     if (live) stopLive();
     // the tree it was recorded against: reuse an identical one, else add it as a new tree
-    var t = d.tree || {}, f = FILES.filter(function (x) { return x.data === t.data; })[0];
+    var t = d.tree || {};
+    var f = FILES.filter(function (x) { return t.id && x.id === t.id; })[0] ||          // its own tree
+            FILES.filter(function (x) { return x.data === t.data; })[0];
     if (!f && t.data) {
       saveActive();
       f = { id: newId(), name: (t.name || 'Interview') + ' (session)', data: t.data, notes: t.notes || [] };
@@ -137,7 +139,7 @@
       if (!items.length) { list.innerHTML = '<div class="empty">No saved sessions yet — they appear here once a live interview has started.</div>'; return; }
       list.innerHTML = items.map(function (it) {
         var resumable = running && it.session_id === running && !(live && LIVE.session === running);
-        return '<div class="srec' + (resumable ? ' running' : '') + '"><span class="sn"><b>' + esc(it.name) + '</b>' +
+        return '<div class="srec' + (resumable ? ' running' : '') + '"><span class="sn"><b>' + esc(it.title || it.name) + '</b>' +
           '<span class="sm">' + esc((it.saved_at || '').replace('T', ' ').slice(0, 16)) + ' · ' + it.lines + ' lines · ' +
           (it.duration || '00:00') + ' · ' + it.clips + ' clip' + (it.clips === 1 ? '' : 's') + (it.src ? ' · ' + esc(it.src) : '') +
           (resumable ? ' · <b>still running</b>' : '') + '</span></span>' +

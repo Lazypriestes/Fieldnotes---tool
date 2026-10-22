@@ -406,6 +406,20 @@
   .filelist{margin-top:5px;width:236px;max-height:44vh;overflow-y:auto;background:var(--surface);
     border:1px solid var(--line);border-radius:9px;box-shadow:0 18px 44px -18px rgba(21,24,27,.42);padding:5px}
   .filelist[hidden]{display:none}
+  /* interview sessions under their tree */
+  .fsess{margin:0 0 3px 18px;border-left:1px solid var(--hair);padding-left:6px}
+  .sessrow{display:flex;align-items:center;gap:7px;padding:4px 6px;border-radius:6px;cursor:pointer;font-size:11.5px;color:var(--ink)}
+  .sessrow:hover{background:#F4F5F6}
+  .sessrow .sico{width:6px;height:6px;border-radius:50%;border:1.5px solid var(--faint);flex:none}
+  .sessrow[data-lines]:not([data-lines="0"]) .sico{background:var(--faint);border-color:var(--faint)}
+  .sessrow.next .sico{border-color:var(--accent);background:var(--accent)}
+  .sessrow.rec .sico{border-color:var(--red);background:var(--red);animation:pulse 1.6s infinite}
+  .sessrow .sname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;outline:none;border-radius:3px}
+  .sessrow .sname[contenteditable="true"]{background:var(--surface);box-shadow:0 0 0 2px var(--accent-soft);white-space:normal}
+  .sessrow .smeta{flex:none;font-size:10px;color:var(--faint)}
+  .sessrow.next .smeta{color:var(--accent)}
+  .sessnew{padding:4px 6px;font-size:11px;color:var(--accent);cursor:pointer;border-radius:6px}
+  .sessnew:hover{background:var(--accent-soft)}
   .filelist .flhd{padding:4px 8px 6px;font-family:ui-monospace,Menlo,monospace;font-size:8.5px;letter-spacing:.1em;color:var(--faint)}
   .filerow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12.5px;color:var(--ink)}
   .filerow:hover{background:var(--hair)}

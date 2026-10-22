@@ -337,12 +337,12 @@
     if (note.w) note.el.style.setProperty('--pw', note.w + 'px'); else note.el.style.removeProperty('--pw');
     if (note.h) note.el.style.setProperty('--ph', note.h + 'px'); else note.el.style.removeProperty('--ph');
   }
-  function paintEye(note) {
+  function paintEye(note) {                       // (name kept) the fold button: a short line, like minimise
     var b = note.el.querySelector('.pn-corner');
     note.el.classList.toggle('folded', !!note.folded);
-    b.innerHTML = note.folded ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/><path d="M2.5 2.5l11 11"/></svg>' : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
-    b.title = note.folded ? 'Folded into a dot — click to keep it open' : 'Kept open — click to fold it into a dot';
-    b.setAttribute('aria-label', b.title); b.setAttribute('aria-pressed', String(!note.folded));
+    b.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h8"/></svg>';
+    b.title = 'Fold into a dot (click the dot to open it again)';
+    b.setAttribute('aria-label', b.title);
     note.el.title = note.folded ? 'Click to open · right-click to delete · drag the ring to connect' : '';
   }
   function clearPageNotes() { pageNotes.forEach(function (n) { n.el.remove(); }); pageNotes = []; if (conns) conns.innerHTML = ''; }

@@ -48,7 +48,7 @@ OLLAMA_URL = "http://localhost:11434/api/chat"
 # Roles: "host" = this Mac without a code (full control), "viewer" = anyone presenting the code
 # (watch + notes; can't start/stop/pause the recording or see other saved interviews).
 SHARE = {"code": None}
-HOST_ONLY_POST = {"/api/start", "/api/stop", "/api/pause", "/api/plan", "/api/session/save", "/api/shared/tree"}
+HOST_ONLY_POST = {"/api/start", "/api/stop", "/api/pause", "/api/plan", "/api/session/save", "/api/session/meta", "/api/shared/tree"}
 SHARED_TREE = {"version": 0, "name": None, "data": None, "notes": []}   # the host's tree, for viewers
 # notes and R clips both interviewers make during the current interview (upserted by uid)
 SHARED_EVENTS = {"session": None, "items": []}
@@ -580,11 +580,48 @@ def save_session(db, sid, data):
     except sqlite3.Error:
         pass
     path = os.path.join(SESS_DIR, sid + ".json")
+    if not data.get("title"):                     # an autosave never drops the name you gave it
+        old = _read_session(sid)
+        if old and old.get("title"):
+            data["title"] = old["title"]
+    _write_session(sid, data)
+    return data["saved_at"]
+
+
+def _read_session(sid):
+    try:
+        with open(os.path.join(SESS_DIR, sid + ".json")) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def _write_session(sid, data):
+    os.makedirs(SESS_DIR, exist_ok=True)
+    path = os.path.join(SESS_DIR, sid + ".json")
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(data, f)
     os.replace(tmp, path)
-    return data["saved_at"]
+
+
+def session_meta(sid, title=None, tree_id=None, tree_name=None):
+    """Name a session, or create an empty named one for a tree (the next interview records
+    into it). Only the name / tree fields are touched."""
+    d = _read_session(sid) or {"format": "fieldnotes-session", "version": 1, "steps": [], "clips": [],
+                                "marks": [], "created_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    if title is not None:
+        d["title"] = str(title).strip()[:80]
+    if tree_id or tree_name:
+        tree = d.get("tree") or {}
+        if tree_id:
+            tree["id"] = str(tree_id)[:64]
+        if tree_name:
+            tree["name"] = str(tree_name)[:120]
+        d["tree"] = tree
+    d.setdefault("saved_at", d.get("created_at"))
+    _write_session(sid, d)
+    return d
 
 
 def list_sessions():
@@ -600,6 +637,7 @@ def list_sessions():
         except (OSError, ValueError):
             continue
         out.append({"id": fn[:-5], "name": (d.get("tree") or {}).get("name") or "Interview",
+                    "title": d.get("title") or "", "tree_id": (d.get("tree") or {}).get("id"),
                     "saved_at": d.get("saved_at"), "src": d.get("src"),
                     "session_id": d.get("session_id"), "lines": len(d.get("steps") or []),
                     "duration": d.get("duration"), "clips": len(d.get("clips") or [])})
@@ -902,6 +940,16 @@ class Handler(BaseHTTPRequestHandler):
                                        data=data["data"], notes=data.get("notes") or [])
                 v = SHARED_TREE["version"]
             return self._json({"ok": True, "version": v})
+        if url.path == "/api/session/meta":   # create an empty named session, or rename one
+            data = self._body()
+            try:
+                sid = _sess_id(data.get("id") or ("p" + format(int(time.time() * 1000), "x")))
+                d = session_meta(sid, data.get("title"), data.get("tree_id"), data.get("tree_name"))
+                return self._json({"ok": True, "id": sid, "title": d.get("title", "")})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except OSError as e:
+                return self._json({"ok": False, "error": f"could not save: {e}"}, 500)
         if url.path == "/api/session/save":
             data = self._body()
             try:

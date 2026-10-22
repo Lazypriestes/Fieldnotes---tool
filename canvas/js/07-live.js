@@ -190,7 +190,7 @@
     enterLiveView('Connecting · local diarization');
     publishTree();
     LIVE.poll = setInterval(livePoll, 1000);
-    SESS.id = null; SESS.lastSig = '';
+    SESS.id = SESS.planned || null; if (!SESS.planned) SESS.title = null; SESS.planned = null; SESS.lastSig = '';
     SESS.timer = setInterval(function () { autosave(false); }, 10000);   // the session log
     livePoll();
   }
