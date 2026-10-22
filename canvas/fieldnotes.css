@@ -34,11 +34,6 @@
 
   .spine{display:flex;align-items:center;gap:10px;padding:8px 12px 9px;border-bottom:1px solid var(--hair);flex:none;
     position:relative;z-index:20}   /* one top bar: tree menu, topics, page, follow, zoom */
-  .pages{display:flex;flex:none;border:1px solid var(--line);border-radius:7px;overflow:hidden}
-  .pages button{padding:4px 10px;font-size:11.5px;color:var(--muted);border-left:1px solid var(--line)}
-  .pages button:first-child{border-left:none}
-  .pages button:hover{color:var(--ink);background:#F4F5F6}
-  .pages button.on{color:var(--accent);background:var(--accent-soft)}
   .followpill{flex:none;display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 10px;border-radius:12px;
     border:1px solid var(--line);color:var(--muted)}
   .followpill i{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.6s infinite}

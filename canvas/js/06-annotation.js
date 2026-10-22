@@ -63,9 +63,7 @@
     layerSw.querySelectorAll('[data-layer]').forEach(function (b) {
       b.setAttribute('aria-pressed', String(b.dataset.layer === name));
     });
-    document.querySelectorAll('.pages [data-scene]').forEach(function (b) {
-      b.classList.toggle('on', b.dataset.scene === name); b.setAttribute('aria-selected', String(b.dataset.scene === name));
-    });
+    document.querySelectorAll('.dock [data-scene]').forEach(function (b) { b.classList.toggle('on', b.dataset.scene === name); });
     hint.textContent = name === 'notes' ? 'DOUBLE-CLICK TO DROP A STICKY'
       : name === 'mindmap' ? 'MIND MAP · CLICK A TOPIC · DRAG TO MOVE AROUND · ⌥SCROLL TO ZOOM · F RECENTERS'
       : 'DRAG TO PAN · ⌥SCROLL TO ZOOM · E TO EDIT';
@@ -91,9 +89,8 @@
       else if (a.dataset.act === 'record') { startRec(false); stopRec(); }
       return;
     }
-  });
-  document.querySelector('.pages').addEventListener('click', function (e) {
-    var s = e.target.closest('[data-scene]'); if (s) setLayer(s.dataset.scene);
+    var s = e.target.closest('[data-scene]');
+    if (s) setLayer(s.dataset.scene);
   });
   layerSw.addEventListener('click', function (e) {
     var b = e.target.closest('[data-layer]'); if (b) setLayer(b.dataset.layer);
