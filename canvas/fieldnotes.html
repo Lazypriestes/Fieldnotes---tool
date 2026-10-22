@@ -323,7 +323,7 @@
     background:#FDF6D8;border:1px solid #E4D9A6;border-radius:7px;padding:9px 11px 10px;
     font-size:12px;line-height:1.45;color:#4A4526;box-shadow:0 12px 26px -16px rgba(21,24,27,.5);cursor:grab}
   .pnote.grabbing{cursor:grabbing}
-  .pnote.mm{border-left:3px solid #8B5CF6}
+  .pnote.folded{border-left:3px solid #8B5CF6}
   .pnote.collapsed{width:16px;height:16px;min-height:0;padding:0;border:2px solid var(--surface);border-radius:50%;
     background:#8B5CF6;box-shadow:0 3px 9px -2px rgba(139,92,246,.6);cursor:pointer;overflow:visible;
     transition:transform .15s}
@@ -346,7 +346,7 @@
   .pnote .pn-corner{right:21px} .pnote .pn-del{right:3px;font-size:15px;line-height:1}
   .pnote:hover .pn-corner,.pnote:hover .pn-del{opacity:1}
   .pnote .pn-corner:hover{background:rgba(139,92,246,.16);color:#7A5CC7}
-  .pnote.mm .pn-corner{opacity:1;color:#8B5CF6}
+  .pnote.folded .pn-corner{opacity:1;color:#8B5CF6}
   .pnote .pn-del:hover{background:rgba(196,105,90,.14);color:#B04A3A}
   .pnote .pn-corner svg{width:12px;height:12px}
   .pdot{position:absolute;width:11px;height:11px;border-radius:50%;background:var(--accent);
@@ -1962,7 +1962,7 @@
   /* ================= page notes: connectable canvas notes ================= */
   var conns = $('conns'), noteBusy = false;
   function updateCollapse(note, animate) {                 // mm note off the mind map = a purple dot
-    var want = note.mm && layerName !== 'mindmap' && !note.expanded;
+    var want = note.folded && !note.expanded;
     if (note.morph) { note.morph.stop(); note.morph = null; endMorph(note); }
     if (want === note.el.classList.contains('collapsed')) return;
     if (animate && MO && !REDUCED && note.el.offsetParent) morphNote(note, want);
@@ -2079,9 +2079,9 @@
     var el = note.el, tx = el.querySelector('.pn-tx');
     tx.addEventListener('blur', function () { note.text = tx.textContent; scheduleFileSave(); });
     tx.addEventListener('keydown', function (e) { if (e.key === 'Escape') tx.blur(); e.stopPropagation(); });
+    // eye: keep the note open; eye-off: fold it into a purple dot (click the dot to peek)
     el.querySelector('.pn-corner').addEventListener('click', function (e) {
-      e.stopPropagation(); note.mm = !note.mm; note.expanded = false; el.classList.toggle('mm', note.mm);
-      el.querySelector('.pn-corner').title = note.mm ? 'On the mind map only — click to show everywhere' : 'Show only on the mind map';
+      e.stopPropagation(); note.folded = !note.folded; note.expanded = false; paintEye(note);
       updateCollapse(note, true); drawConns(); scheduleFileSave();
     });
     // collapsed purple dot: click to expand; it folds back to a dot only after the cursor has
@@ -2090,7 +2090,7 @@
     var foldTimer = null;
     el.addEventListener('mouseenter', function () { clearTimeout(foldTimer); });
     el.addEventListener('mouseleave', function () {
-      if (!note.mm || layerName === 'mindmap' || !note.expanded || noteBusy) return;
+      if (!note.folded || !note.expanded || noteBusy) return;
       clearTimeout(foldTimer);
       foldTimer = setTimeout(function () {
         if (document.activeElement && el.contains(document.activeElement)) return;
@@ -2155,17 +2155,18 @@
 
   function addPageNote(x, y, seed) {
     var note = { id: (seed && seed.id) || ('pn' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36)),
-      x: x, y: y, text: (seed && seed.text) || '', mm: !!(seed && seed.mm), links: (seed && seed.links) ? seed.links.slice() : [] };
+      x: x, y: y, text: (seed && seed.text) || '', links: (seed && seed.links) ? seed.links.slice() : [],
+      folded: !!(seed && (seed.folded || seed.mm)) };      // 'mm' = older files' "mind map only", now simply folded
     var el = document.createElement('div');
-    el.className = 'pnote' + (note.mm ? ' mm' : '');
+    el.className = 'pnote';
     el.style.left = x + 'px'; el.style.top = y + 'px';
     el.innerHTML =
-      '<button class="pn-corner" title="' + (note.mm ? 'On the mind map only — click to show everywhere' : 'Show only on the mind map') + '"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2"/><circle cx="3" cy="3.5" r="1.3"/><circle cx="13" cy="3.5" r="1.3"/><circle cx="3" cy="12.5" r="1.3"/><circle cx="13" cy="12.5" r="1.3"/><path d="M6.5 6.6 4 4.2M9.5 6.6 12 4.2M6.5 9.4 4 11.8M9.5 9.4 12 11.8"/></svg></button>' +
+      '<button class="pn-corner"></button>' +
       '<button class="pn-del" title="Delete note">×</button>' +
       '<span class="pn-grip" title="Drag to move"></span>' +
       '<div class="pn-tx" contenteditable="true" spellcheck="false" data-ph="Type a note…">' + esc(note.text) + '</div>' +
       '<span class="pdot t"></span><span class="pdot r"></span><span class="pdot b"></span><span class="pdot l"></span>';
-    note.el = el; world.appendChild(el);
+    note.el = el; world.appendChild(el); paintEye(note);
     wireNote(note); pageNotes.push(note); updateCollapse(note); drawConns();
     if (!seed) { scheduleFileSave(); setTimeout(function () { el.querySelector('.pn-tx').focus(); }, 30); }
     return note;
@@ -2175,7 +2176,14 @@
     var p = toWorld(r.left + viewport.clientWidth / 2, r.top + viewport.clientHeight / 2);
     return addPageNote(p.x - 92, p.y - 24);
   }
-  function serializeNote(n) { return { id: n.id, x: n.x, y: n.y, text: n.text, mm: n.mm, links: n.links }; }
+  function serializeNote(n) { return { id: n.id, x: n.x, y: n.y, text: n.text, folded: !!n.folded, links: n.links }; }
+  function paintEye(note) {
+    var b = note.el.querySelector('.pn-corner');
+    note.el.classList.toggle('folded', !!note.folded);
+    b.innerHTML = note.folded ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/><path d="M2.5 2.5l11 11"/></svg>' : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
+    b.title = note.folded ? 'Folded into a dot — click to keep it open' : 'Kept open — click to fold it into a dot';
+    b.setAttribute('aria-label', b.title); b.setAttribute('aria-pressed', String(!note.folded));
+  }
   function clearPageNotes() { pageNotes.forEach(function (n) { n.el.remove(); }); pageNotes = []; if (conns) conns.innerHTML = ''; }
   function rebuildPageNotes(arr) { clearPageNotes(); (arr || []).forEach(function (s) { addPageNote(s.x, s.y, s); }); drawConns(); }
 
