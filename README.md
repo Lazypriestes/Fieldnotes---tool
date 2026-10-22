@@ -7,6 +7,10 @@ Everything runs locally.
 
 ```
 canvas/         the UI — a hand-built question-tree canvas, timeline, notes, dock
+  fieldnotes.html   the page (markup only)
+  fieldnotes.css    all styles
+  js/01…11-*.js     the app, one file per area (tree, mind map, notes, live, timeline, …)
+  vendor/           Motion (animations), kept locally so everything works offline
 diarization/    audio → who-spoke-when → transcript (Nemotron / call channels + Parakeet → SQLite)
 analysis/       serves the canvas; local-LLM coverage, anonymization, summaries, export, import
 ```
@@ -156,7 +160,10 @@ audio ─▶ diarization/pipeline.py ─▶ diarization/transcript.db ─▶ ana
   `/api/plan` (your question tree), `/api/coverage` (LLM verdicts), `/api/start` · `/stop`
   · `/status` (the live pipeline), `/api/anonymize`, `/api/summarize`, `/api/export`
   (`analysis/docexport.py`), `/api/import` (`analysis/docimport.py`), `/api/cues`.
-  Its paths default to the sibling `canvas/` and `diarization/` folders.
+  Its paths default to the sibling `canvas/` and `diarization/` folders. It serves
+  `canvas/js/*.js` as one script (`/app.js`, joined in file-name order inside one closure),
+  so the files share their variables exactly as one file would — no build step; edit a file
+  and reload.
 
 ## Notes
 

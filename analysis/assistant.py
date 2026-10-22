@@ -474,6 +474,33 @@ def ollama_summary(model, topic, texts):
 
 
 # ---- export (Word / PDF) ---------------------------------------------------------------
+
+def ui_asset(ui_path, name):
+    """The page's own files, next to fieldnotes.html. /app.js is canvas/js/*.js joined in
+    file-name order inside ONE closure: the code is split into files for editing, but the
+    browser runs a single script exactly as if it were still one file. Fixed names only,
+    so no path from the URL ever reaches the filesystem."""
+    if not ui_path:
+        return None
+    base = os.path.dirname(os.path.abspath(ui_path))
+    if name == "/app.js":
+        folder = os.path.join(base, "js")
+        files = sorted(f for f in os.listdir(folder) if f.endswith(".js")) if os.path.isdir(folder) else []
+        if not files:
+            return None
+        parts = []
+        for f in files:
+            with open(os.path.join(folder, f), encoding="utf-8") as fh:
+                parts.append(fh.read())
+        return ("(function () {\n  'use strict';\n\n" + "".join(parts) + "})();").encode("utf-8")
+    path = {"/fieldnotes.css": os.path.join(base, "fieldnotes.css"),
+            "/vendor/motion.js": os.path.join(base, "vendor", "motion-13.4.4.js")}.get(name)
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
 class AnonymizeFailed(Exception):
     pass
 
@@ -944,14 +971,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, f.read(), "text/html; charset=utf-8", headers)
             return self._send(200, b"<h1>assistant running</h1><p>no --ui set</p>", "text/html")
 
-        if url.path == "/vendor/motion.js":   # animation library, kept locally (no CDN: works offline)
-            if self.ui_path:
-                lib = os.path.join(os.path.dirname(self.ui_path), "vendor", "motion-13.4.4.js")
-                if os.path.exists(lib):
-                    with open(lib, "rb") as f:
-                        return self._send(200, f.read(), "text/javascript; charset=utf-8",
-                                          {"Cache-Control": "max-age=86400"})
-            return self._send(404, b"not found", "text/plain")
+        if url.path in ("/app.js", "/fieldnotes.css", "/vendor/motion.js"):
+            body = ui_asset(self.ui_path, url.path)
+            if body is None:
+                return self._send(404, b"not found", "text/plain")
+            ctype = "text/css; charset=utf-8" if url.path.endswith(".css") else "text/javascript; charset=utf-8"
+            cache = "max-age=86400" if url.path.startswith("/vendor/") else "no-cache"   # app code: always fresh
+            return self._send(200, body, ctype, {"Cache-Control": cache})
 
         if url.path == "/api/segments":
             after = self._after(url)
