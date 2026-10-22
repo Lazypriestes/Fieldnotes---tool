@@ -318,7 +318,7 @@
   .conn{fill:none;stroke:var(--accent);stroke-width:1.6;opacity:.75;pointer-events:none}
   .conn.temp{stroke-dasharray:5 4;opacity:.9}
   .conn-hit{fill:none;stroke:transparent;stroke-width:12;pointer-events:stroke;cursor:pointer}
-  .pnote{position:absolute;width:184px;min-height:46px;z-index:6;box-sizing:border-box;
+  .pnote{position:absolute;width:var(--pw,184px);min-height:var(--ph,46px);z-index:6;box-sizing:border-box;
     background:#FDF6D8;border:1px solid #E4D9A6;border-radius:7px;padding:9px 11px 10px;
     font-size:12px;line-height:1.45;color:#4A4526;box-shadow:0 12px 26px -16px rgba(21,24,27,.5);cursor:grab}
   .pnote.grabbing{cursor:grabbing}
@@ -338,6 +338,10 @@
   .pnote:hover .pn-grip:before{opacity:1}
   .pnote.grabbing,.pnote.grabbing *{cursor:grabbing!important}
   .pnote .pn-tx{outline:none;min-height:20px;cursor:grab}
+  .pnote .pn-rs{position:absolute;right:2px;bottom:2px;width:12px;height:12px;cursor:nwse-resize;opacity:0;transition:opacity .12s;
+    background:linear-gradient(135deg,transparent 45%,#B0A46A 45%,#B0A46A 55%,transparent 55%,transparent 70%,#B0A46A 70%,#B0A46A 80%,transparent 80%)}
+  .pnote:hover .pn-rs,.pnote.resizing .pn-rs{opacity:.8}
+  .pnote.resizing,.pnote.resizing *{cursor:nwse-resize!important}
   .pnote .pn-tx:focus{cursor:text}
   .pnote .pn-tx:empty:before{content:attr(data-ph);color:#BCB183}
   .pnote .pn-corner,.pnote .pn-del{position:absolute;top:3px;width:17px;height:17px;border-radius:4px;
@@ -2231,6 +2235,28 @@
       pageNotes.forEach(function (p) { p.links = p.links.filter(function (l) { return l !== note.id; }); });
       drawConns(); scheduleFileSave();
     });
+    // corner grip: drag to resize (double-click it to go back to the default size)
+    var rs = el.querySelector('.pn-rs');
+    rs.addEventListener('pointerdown', function (ev) {
+      ev.stopPropagation(); ev.preventDefault();
+      var s0 = toWorld(ev.clientX, ev.clientY), w0 = el.offsetWidth, h0 = el.offsetHeight;
+      try { rs.setPointerCapture(ev.pointerId); } catch (_e) {}
+      el.classList.add('resizing'); noteBusy = true;
+      function mv(e2) {
+        var p = toWorld(e2.clientX, e2.clientY);
+        note.w = Math.round(clamp(w0 + p.x - s0.x, 120, 640));
+        note.h = Math.round(clamp(h0 + p.y - s0.y, 46, 700));
+        sizeNote(note); drawConns();
+      }
+      function up() {
+        rs.removeEventListener('pointermove', mv); rs.removeEventListener('pointerup', up); rs.removeEventListener('pointercancel', up);
+        el.classList.remove('resizing'); noteBusy = false; drawConns(); scheduleFileSave();
+      }
+      rs.addEventListener('pointermove', mv); rs.addEventListener('pointerup', up); rs.addEventListener('pointercancel', up);
+    });
+    rs.addEventListener('dblclick', function (ev) {
+      ev.stopPropagation(); note.w = note.h = null; sizeNote(note); drawConns(); scheduleFileSave();
+    });
     // drag a side dot -> connect to a question node, or to another note
     function dropTarget(x, y) {
       var over = document.elementFromPoint(x, y); if (!over) return null;
@@ -2281,7 +2307,7 @@
   function addPageNote(x, y, seed) {
     var note = { id: (seed && seed.id) || ('pn' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36)),
       x: x, y: y, text: (seed && seed.text) || '', links: (seed && seed.links) ? seed.links.slice() : [],
-      folded: !!(seed && (seed.folded || seed.mm)) };      // 'mm' = older files' "mind map only", now simply folded
+      folded: !!(seed && (seed.folded || seed.mm)), w: seed && seed.w, h: seed && seed.h };      // 'mm' = older files' "mind map only", now simply folded
     var el = document.createElement('div');
     el.className = 'pnote';
     el.style.left = x + 'px'; el.style.top = y + 'px';
@@ -2290,8 +2316,9 @@
       '<button class="pn-del" title="Delete note">×</button>' +
       '<span class="pn-grip" title="Drag to move"></span>' +
       '<div class="pn-tx" contenteditable="true" spellcheck="false" data-ph="Type a note…">' + esc(note.text) + '</div>' +
-      '<span class="pdot t"></span><span class="pdot r"></span><span class="pdot b"></span><span class="pdot l"></span>';
-    note.el = el; world.appendChild(el); paintEye(note);
+      '<span class="pdot t"></span><span class="pdot r"></span><span class="pdot b"></span><span class="pdot l"></span>' +
+      '<span class="pn-rs" title="Drag to resize"></span>';
+    note.el = el; world.appendChild(el); paintEye(note); sizeNote(note);
     wireNote(note); pageNotes.push(note); updateCollapse(note); drawConns();
     if (!seed) { scheduleFileSave(); setTimeout(function () { el.querySelector('.pn-tx').focus(); }, 30); }
     return note;
@@ -2301,7 +2328,12 @@
     var p = toWorld(r.left + viewport.clientWidth / 2, r.top + viewport.clientHeight / 2);
     return addPageNote(p.x - 92, p.y - 24);
   }
-  function serializeNote(n) { return { id: n.id, x: n.x, y: n.y, text: n.text, folded: !!n.folded, links: n.links }; }
+  function serializeNote(n) { return { id: n.id, x: n.x, y: n.y, text: n.text, folded: !!n.folded, links: n.links, w: n.w || undefined, h: n.h || undefined }; }
+  // size lives in CSS variables, so the folded-dot style (a fixed 16px) still wins over it
+  function sizeNote(note) {
+    if (note.w) note.el.style.setProperty('--pw', note.w + 'px'); else note.el.style.removeProperty('--pw');
+    if (note.h) note.el.style.setProperty('--ph', note.h + 'px'); else note.el.style.removeProperty('--ph');
+  }
   function paintEye(note) {
     var b = note.el.querySelector('.pn-corner');
     note.el.classList.toggle('folded', !!note.folded);
