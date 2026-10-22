@@ -747,8 +747,11 @@
   .db-clips{margin:6px 0 0 11px;display:grid;gap:8px}
   .db-quote.rec{position:relative;padding-left:14px}
   .db-quote.rec::before{content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;border-radius:1px;background:var(--red)}
-  .db-recend{display:block;margin:3px 0 0 3px;font-size:10.5px;color:var(--red);border-radius:4px;padding:0 4px;text-align:left}
-  .db-recend:hover,.db-recend[aria-expanded="true"]{background:rgba(196,105,90,.1)}
+  .db-recend{display:flex;align-items:center;gap:8px;margin:4px 0 0 3px;font-size:10.5px;color:var(--red)}
+  .db-recend .sc{margin-left:auto;font-size:10.5px;color:var(--accent);border:1px solid var(--line);border-radius:10px;padding:0 8px}
+  .db-recend .sc:hover,.db-recend .sc[aria-expanded="true"]{border-color:var(--accent)}
+  .db-recnote{font-size:12px;margin:3px 0 0 3px;color:#6B5BB0}
+  .db-recscript{margin:6px 0 0 3px}
   .db-q.added{border:1px dashed var(--green);border-radius:8px;padding:6px 8px;background:rgba(78,154,107,.05)}
   .addtag{font-size:10px;color:var(--green);border:1px dashed var(--green);border-radius:8px;padding:0 5px}
   :root[data-theme="dark"] .db-chip.note,:root[data-theme="dark"] .db-nt:not(.clip):not([aria-expanded="true"]){color:#B7A6F2}
@@ -1665,14 +1668,18 @@
   function dbClipList(key, clips, sess) {
     return '<div class="db-clips" data-notesfor="c:' + key + '">' + clips.map(function (x) { return dbClipHTML(x, sess); }).join('') + '</div>';
   }
-  function dbRecEnd(x, sess) {
-    var c = x.c, k = 'r' + Math.round(c.startMs) + '-' + Math.round(c.endMs), on = !!dbNotesOpen[k];
-    var rx = c.reaction ? reactMeta(c.reaction) : null, nn = (c.notes || []).length;
-    return '<button class="db-recend" data-dbnotes="' + k + '" aria-expanded="' + on + '" title="' + (on ? 'Hide' : 'Show') + ' this recording">' +
-      '● Recorded ' + fmtTime(sess.tbase + c.startMs / 1000) + '–' + fmtTime(sess.tbase + c.endMs / 1000) +
-      (rx ? ' <span style="color:' + reactColor(c.reaction) + '">' + rx.g + '</span>' : '') +
-      (nn ? ' · ✎ ' + nn : '') + '</button>' +
-      (on ? '<div class="db-clips" data-notesfor="' + k + '">' + dbClipHTML(x, sess) + '</div>' : '');
+  function dbRecEnd(x, sess) {                    // one line: the time, its reaction, Script
+    var c = x.c, key = 'c' + Math.round(c.startMs) + '-' + Math.round(c.endMs);
+    var rx = c.reaction ? reactMeta(c.reaction) : null;
+    var h = '<div class="db-recend"><span>● Recorded ' + fmtTime(sess.tbase + c.startMs / 1000) + '–' + fmtTime(sess.tbase + c.endMs / 1000) +
+      (rx ? ' <span style="color:' + reactColor(c.reaction) + '" title="' + rx.l + '">' + rx.g + '</span>' : '') + '</span>' +
+      (x.inWin.length ? '<button class="sc" data-dbscript="' + key + '" aria-expanded="' + !!dbScript[key] + '">' + (dbScript[key] ? 'Hide script' : 'Script') + '</button>' : '') + '</div>' +
+      (c.notes || []).map(function (nt) { return '<div class="db-recnote">✎ ' + anonHTML(nt) + '</div>'; }).join('');
+    if (dbScript[key]) h += '<div class="db-script db-recscript">' + x.inWin.map(function (i) {
+      var e = sess.steps[i], isInt = mmIsInterviewer(e);
+      return '<div class="sl' + (isInt ? ' int' : '') + '"><span class="sw">' + (isInt ? 'Interviewer' : 'Candidate') + '</span>' + anonHTML(e.t) + '</div>';
+    }).join('') + '</div>';
+    return h;
   }
   function dbClipHTML(x, sess) {
     var c = x.c, key = 'c' + Math.round(c.startMs) + '-' + Math.round(c.endMs);
