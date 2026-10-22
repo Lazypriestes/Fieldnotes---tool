@@ -246,7 +246,8 @@
       if (pn && pn !== el) { var o = pageNotes.filter(function (p) { return p.el === pn; })[0]; if (o) return { el: pn, id: o.id, note: o }; }
       return null;
     }
-    el.querySelectorAll('.pdot').forEach(function (dot) {
+    // the side dots of an open note, and the little ring beside a folded one, all start a link
+    el.querySelectorAll('.pdot,.pn-link').forEach(function (dot) {
       dot.addEventListener('pointerdown', function (ev) {
         ev.stopPropagation(); ev.preventDefault();
         var w = el.offsetWidth, h = el.offsetHeight, ax = note.x + w / 2, ay = note.y + h / 2, before = histSnap();
@@ -304,7 +305,8 @@
       '<span class="pn-grip" title="Drag to move"></span>' +
       '<div class="pn-tx" contenteditable="true" spellcheck="false" data-ph="Type a note…">' + esc(note.text) + '</div>' +
       '<span class="pdot t"></span><span class="pdot r"></span><span class="pdot b"></span><span class="pdot l"></span>' +
-      '<span class="pn-rs" title="Drag to resize"></span>';
+      '<span class="pn-rs" title="Drag to resize"></span>' +
+      '<span class="pn-link" title="Drag onto a question to connect this note"></span>';
     note.el = el; world.appendChild(el); paintEye(note); sizeNote(note);
     wireNote(note); pageNotes.push(note); updateCollapse(note); drawConns();
     if (!seed) { scheduleFileSave(); setTimeout(function () { el.querySelector('.pn-tx').focus(); }, 30); }

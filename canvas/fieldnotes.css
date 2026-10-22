@@ -338,7 +338,14 @@
   .pnote.collapsed{width:14px;height:14px;min-height:0;padding:0;border:0;border-radius:50%;
     background:#8B5CF6;box-shadow:none;cursor:pointer;overflow:visible;
     transition:transform .15s}
-  .pnote.collapsed > *{display:none!important}
+  .pnote.collapsed > *:not(.pn-link){display:none!important}
+  /* folded dot: a small ring on its right, on hover, to drag a connection to a question */
+  .pnote .pn-link{display:none}
+  .pnote.collapsed .pn-link{display:block;position:absolute;left:calc(100% - 1px);top:50%;width:9px;height:9px;margin-top:-4.5px;
+    box-sizing:border-box;border:1.5px solid #8B5CF6;border-radius:50%;background:var(--surface);opacity:0;cursor:crosshair;
+    transition:opacity .12s}
+  .pnote.collapsed:hover .pn-link{opacity:1}
+  .pnote.collapsed .pn-link:hover{background:#8B5CF6}
   .pnote.collapsed:hover{transform:scale(1.18)}
   .conn.faint{stroke:#8B5CF6;opacity:.42;stroke-width:1.3}
   .pnote{padding-top:17px}
