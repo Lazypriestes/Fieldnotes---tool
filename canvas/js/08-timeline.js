@@ -197,7 +197,7 @@
   // asked; not linked to it. Click it to read the note. The timeline mark stays the record.
   function dropLiveNoteDot(text) {
     var q = INDEX[current]; if (!q || q.y == null) return;
-    var x = VTL_X - 40, y = q.y + q.h / 2 - 9;
+    var x = VTL_X - 50, y = q.y + q.h / 2 - 9;
     pageNotes.forEach(function (p) {                     // several notes on one question: line up to the left
       if (p.live && Math.abs(p.y - y) < 20 && p.x <= x + 4) x = Math.min(x, p.x - 26);
     });
@@ -219,6 +219,8 @@
       vtl.setAttribute('class', 'vtl'); vtl.setAttribute('width', '1'); vtl.setAttribute('height', '1');
       world.insertBefore(vtl, world.firstChild);
       vtl.addEventListener('click', function (e) {
+        var j = e.target.closest('[data-jump]');
+        if (j) { jumpTo(j.getAttribute('data-jump')); return; }
         var g = e.target.closest('[data-idx]'); if (!g || !live) return;
         seekIdx(+g.getAttribute('data-idx'), false);
       });
@@ -252,9 +254,10 @@
     (sess.ahead || []).forEach(function (n) {             // answered ahead: amber diamond, at the moment it happened
       if (n.idx > last) return;
       var y = yOf(n.at); if (y == null) return;
-      var cx = x + 22;
-      p.push('<g class="hit" data-idx="' + (n.idx || 0) + '">' + tip('Answered ahead: ' + n.label) +
-        '<path class="ahead" d="M' + cx + ' ' + (y - 4.5) + ' L' + (cx + 4.5) + ' ' + y + ' L' + cx + ' ' + (y + 4.5) + ' L' + (cx - 4.5) + ' ' + y + 'Z"/></g>');
+      var cx = x - 20;                                    // left of the line; click = go to that question
+      p.push('<g class="hit" data-jump="' + n.id + '">' + tip('Answered ahead: ' + n.label + ' — click to go there') +
+        '<circle class="pad" cx="' + cx + '" cy="' + y + '" r="9"/>' +
+        '<path class="ahead" d="M' + cx + ' ' + (y - 5) + ' L' + (cx + 5) + ' ' + y + ' L' + cx + ' ' + (y + 5) + ' L' + (cx - 5) + ' ' + y + 'Z"/></g>');
     });
     sess.marks.forEach(function (m) {                     // added questions: green dots
       if (!m.q || m.idx > last) return;
