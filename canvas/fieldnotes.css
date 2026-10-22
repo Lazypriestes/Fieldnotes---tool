@@ -688,9 +688,8 @@
   /* ---------- dark mode ---------- */
   /* mind map = interview debrief: a hub and one card per topic, over the (hidden) tree */
   .debrief{position:absolute;inset:0;z-index:4;display:none;overflow:hidden;cursor:grab;touch-action:none;
-    padding:8px 28px 130px 92px;background:var(--surface);border-top:128px solid var(--surface)}   /* scroll area starts below the tree menu */
+    padding:136px 28px 130px 92px;background:var(--surface)}   /* starts below the tree menu; nothing covers it when you pan */
   .app.layer-mindmap .debrief{display:block}
-  .app.layer-mindmap .spine{display:none}   /* topic tabs steer the tree; the debrief already shows every topic */
   .app.layer-mindmap .world,.app.layer-mindmap .zoomctl{visibility:hidden}
   .debrief.panning{cursor:grabbing}
   .db-wrap{transform-origin:0 0;position:relative;display:grid;grid-template-columns:minmax(0,1fr) 210px minmax(0,1fr);
