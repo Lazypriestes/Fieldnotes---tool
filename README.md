@@ -108,10 +108,13 @@ sit together, pick *+1 interviewer in the room*.
 - **During an interview** — the current question pulses; answered / touched / open questions
   colour in; answers given *ahead* of time are flagged. **R** records a clip from 10 s back
   until you release; rate it or add a note. Add notes and new questions as you go.
-- **Pages** (**S** cycles) — *Tree*, *Annotation* (answers pinned to their questions) and
-  *Mind map*: the same tree plus, beside it, an AI summary per category that opens into
-  its answers (each linked to every question it covers — click to jump there), recordings
-  with their full script, and notes. **The mind map shows only anonymized text.**
+- **Pages** (**S** cycles) — *Tree* (your plan and live progress), *Annotation* (answers
+  pinned to their questions) and *Mind map*, the interview debrief: what you learned, per
+  topic. The overall coverage sits in the middle with one card per topic around it, each
+  with an AI summary and how many of its questions were answered. Click a topic to open it:
+  short quotes under each question (a reply that answers several questions shows once), the
+  questions still open, clips with their script, and notes. Click a question to jump to it
+  on the tree. **The mind map shows only anonymized text.**
 - **What counts as asked / answered** — select a question to see its cues and how specific an
   answer must be (*loose / normal / strict*, set automatically from the question's wording:
   numbers, yes/no and which/who/when are strict; open or opinion questions are loose). **✦ auto**
