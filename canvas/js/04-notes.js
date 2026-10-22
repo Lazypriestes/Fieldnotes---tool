@@ -3,7 +3,14 @@
   var cam = { x: 60, y: 40, z: 1 };
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
   function vh() { return viewport.clientHeight - (live ? 84 : 0); }
+  // keep text sharp at every zoom: the GPU fast path is on only while the view is moving
+  function moving(el, ms) {
+    el.classList.add('moving');
+    clearTimeout(el._sharpT);
+    el._sharpT = setTimeout(function () { el.classList.remove('moving'); }, ms);
+  }
   function apply(animate) {
+    moving(world, animate ? 680 : 160);
     world.classList.toggle('glide', !!animate);
     world.style.transform = 'translate(' + cam.x + 'px,' + cam.y + 'px) scale(' + cam.z + ')';
     zoomVal.textContent = Math.round(cam.z * 100) + '%';

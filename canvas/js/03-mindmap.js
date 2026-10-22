@@ -149,6 +149,7 @@
   function dbApplyView() {
     var w = dbEl && dbEl.querySelector('.db-wrap'); if (!w) return;
     w.style.transform = 'translate(' + DBV.x + 'px,' + DBV.y + 'px) scale(' + DBV.z + ')';
+    moving(w, 160);
   }
   var dbViewAnim = null;
   function dbAnimateView(to) {
