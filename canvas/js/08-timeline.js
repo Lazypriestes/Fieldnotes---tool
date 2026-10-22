@@ -62,6 +62,7 @@
   }
 
   function updateTL() {
+    drawVTL();
     var el = $('tl'); if (!el) return;
     var span = spanNow();
     var viewF = reviewing ? (cumEnd[viewIdx] / span) * LIVE_X : LIVE_X;
@@ -192,17 +193,77 @@
       dropLiveNoteDot(t);
     });
   }
-  // a folded purple dot level with the question being asked, just right of the whole tree
-  // (not linked to it); click it to read the note. The timeline mark stays the record.
+  // a folded purple dot on the side timeline (left of the tree), level with the question being
+  // asked; not linked to it. Click it to read the note. The timeline mark stays the record.
   function dropLiveNoteDot(text) {
     var q = INDEX[current]; if (!q || q.y == null) return;
-    var x = bounds.w + 56, y = q.y + q.h / 2 - 8;
-    pageNotes.forEach(function (p) {                     // several notes on one question: line up to the right
-      if (p.live && Math.abs(p.y - y) < 20 && p.x >= x - 4) x = Math.max(x, p.x + 28);
+    var x = VTL_X - 40, y = q.y + q.h / 2 - 9;
+    pageNotes.forEach(function (p) {                     // several notes on one question: line up to the left
+      if (p.live && Math.abs(p.y - y) < 20 && p.x <= x + 4) x = Math.min(x, p.x - 26);
     });
     var note = addPageNote(x, y, { text: text, folded: true, live: true });
     scheduleFileSave();
     pop(note.el, { scale: [0.3, 1] }, { type: 'spring', visualDuration: 0.3, bounce: 0.3 });
+  }
+
+  /* ---------- side timeline: the interview so far, top-down beside the tree ----------
+     A line from the top of the tree down to the question being asked now (never further), with
+     each event level with the question it happened at: a tick per question asked, red bars for
+     recorded parts, amber for answered ahead, green for added questions. Live note dots sit to
+     its left. Click an event to scrub the bottom timeline to that moment. */
+  var VTL_X = -70, vtl = null;
+  function drawVTL() {
+    vtl = vtl || world.querySelector('svg.vtl');          // the tree can draw before this file has run
+    if (!vtl) {
+      vtl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      vtl.setAttribute('class', 'vtl'); vtl.setAttribute('width', '1'); vtl.setAttribute('height', '1');
+      world.insertBefore(vtl, world.firstChild);
+      vtl.addEventListener('click', function (e) {
+        var g = e.target.closest('[data-idx]'); if (!g || !live) return;
+        seekIdx(+g.getAttribute('data-idx'), false);
+      });
+    }
+    var sess = mmSession();
+    if (VTL_X === undefined || !sess || sess.lastIdx < 0 || !topics().length || topics()[0].y == null) { vtl.innerHTML = ''; return; }
+    function yOf(id) { var n = mmVisibleAnchor(id); return n && n.y != null ? n.y + n.h / 2 : null; }
+    function at(i) { return fmtTime(sess.tbase + (i > 0 ? sess.cum[i - 1] : 0) / 1000); }
+    function tip(t) { return '<title>' + esc(t) + '</title>'; }
+    var last = live && reviewing ? viewIdx : sess.lastIdx;   // reviewing: nothing after the moment you're on
+    var x = VTL_X, top = topics()[0].y + 4, nowQ = live ? current : mmCurAt(sess, last);
+    var yEnd = (nowQ && yOf(nowQ)) || top, p = [];
+    p.push('<line class="ln" x1="' + x + '" y1="' + top + '" x2="' + x + '" y2="' + yEnd + '"/>');
+    var prev = null;                                      // a tick each time the question changes
+    for (var i = 0; i <= last; i++) {
+      var c = sess.steps[i] && sess.steps[i].cur;
+      if (!c || c === prev) continue;
+      prev = c; var y = yOf(c); if (y == null) continue;
+      p.push('<g class="hit" data-idx="' + i + '">' + tip(mmQLabel(INDEX[c]) + ' asked · ' + at(i)) +
+        '<rect x="' + (x + 1) + '" y="' + (y - 5) + '" width="16" height="10"/><line class="tk" x1="' + (x + 3) + '" y1="' + y + '" x2="' + (x + 13) + '" y2="' + y + '"/></g>');
+    }
+    sess.clips.forEach(function (cl) {                    // recorded parts: red bars left of the line
+      var i0 = -1, i1 = -1;
+      for (var i = 0; i <= last; i++) { var w = mmStepWin(sess, i); if (w[0] < cl.endMs && w[1] > cl.startMs) { if (i0 < 0) i0 = i; i1 = i; } }
+      if (i0 < 0) return;
+      var a = yOf(mmCurAt(sess, i0)), b = yOf(mmCurAt(sess, i1)); if (a == null || b == null) return;
+      var y0 = Math.min(a, b) - 4, h = Math.max(8, Math.abs(b - a) + 8);
+      p.push('<g class="hit" data-idx="' + i0 + '">' + tip('Recorded ' + fmtTime(sess.tbase + cl.startMs / 1000) + '–' + fmtTime(sess.tbase + cl.endMs / 1000)) +
+        '<rect class="clip" x="' + (x - 9) + '" y="' + y0 + '" width="4" height="' + h + '" rx="2"/></g>');
+    });
+    (sess.ahead || []).forEach(function (n) {             // answered ahead: amber diamond, at the moment it happened
+      if (n.idx > last) return;
+      var y = yOf(n.at); if (y == null) return;
+      var cx = x + 22;
+      p.push('<g class="hit" data-idx="' + (n.idx || 0) + '">' + tip('Answered ahead: ' + n.label) +
+        '<path class="ahead" d="M' + cx + ' ' + (y - 4.5) + ' L' + (cx + 4.5) + ' ' + y + ' L' + cx + ' ' + (y + 4.5) + ' L' + (cx - 4.5) + ' ' + y + 'Z"/></g>');
+    });
+    sess.marks.forEach(function (m) {                     // added questions: green dots
+      if (!m.q || m.idx > last) return;
+      var y = yOf(mmCurAt(sess, m.idx)); if (y == null) return;
+      p.push('<g class="hit" data-idx="' + m.idx + '">' + tip('Question added: ' + m.text) +
+        '<circle class="add" cx="' + (x + 32) + '" cy="' + y + '" r="3.5"/></g>');
+    });
+    if (live) p.push('<circle class="nowring" cx="' + x + '" cy="' + yEnd + '" r="6"/><circle class="now" cx="' + x + '" cy="' + yEnd + '" r="4.5"/>');
+    vtl.innerHTML = p.join('');
   }
 
   function topicOf(n) { while (n && n.depth > 0) n = n.parent; return (n && n.id !== '_root') ? n : topics()[0]; }

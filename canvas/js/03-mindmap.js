@@ -43,10 +43,10 @@
   var MM_LAST = null, mmSig = '';
   function mmSnapshot() {
     return { steps: STEPS.slice(0, liveIdx + 1), cum: cumEnd.slice(0, liveIdx + 1), lastIdx: liveIdx,
-             clips: redSpans.slice(), marks: userMarks.slice(), tbase: TBASE, state: Object.assign({}, state) };
+             clips: redSpans.slice(), marks: userMarks.slice(), tbase: TBASE, state: Object.assign({}, state), ahead: notes.slice() };
   }
   function mmSession() {
-    if (live) return { steps: STEPS, cum: cumEnd, lastIdx: liveIdx, clips: redSpans, marks: userMarks, tbase: TBASE, state: state };
+    if (live) return { steps: STEPS, cum: cumEnd, lastIdx: liveIdx, clips: redSpans, marks: userMarks, tbase: TBASE, state: state, ahead: notes };
     return MM_LAST;
   }
   function mmStepWin(sess, i) {

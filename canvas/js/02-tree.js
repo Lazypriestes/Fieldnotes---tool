@@ -181,7 +181,7 @@
       });
       drawEdges(extra, k);
       if (annoList.length) layoutAnnos();
-      drawConns();
+      drawConns(); drawVTL();
       if (camTo !== camY0) { cam.y = camY0 + (camTo - camY0) * e; apply(false); }
     }
     function settle() {                                  // land exactly on the final layout
@@ -255,6 +255,7 @@
     drawEdges();
     layoutAnnos();
     drawConns();
+    drawVTL();
   }
 
 

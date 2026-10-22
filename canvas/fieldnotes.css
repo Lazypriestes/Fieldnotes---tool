@@ -79,6 +79,18 @@
   .world.moving,.db-wrap.moving{will-change:transform}
   .world.glide{transition:transform .6s cubic-bezier(.35,.05,.15,1)}
   svg.edges{position:absolute;top:0;left:0;overflow:visible;pointer-events:none}
+  /* side timeline: the interview so far, top-down, left of the tree */
+  svg.vtl{position:absolute;top:0;left:0;overflow:visible;pointer-events:none}
+  .vtl .ln{stroke:#9DB0D6;stroke-width:2;stroke-linecap:round}
+  .vtl .tk{stroke:#7F90B2;stroke-width:1.6;stroke-linecap:round}
+  .vtl .hit{pointer-events:all;cursor:pointer}
+  .vtl .hit rect:not(.clip){fill:transparent}
+  .vtl .hit:hover .tk{stroke:var(--accent);stroke-width:2.4}
+  .vtl .clip{fill:var(--red)} .vtl .ahead{fill:var(--amber)} .vtl .add{fill:var(--green)}
+  .vtl .now{fill:var(--accent)}
+  .vtl .nowring{fill:none;stroke:var(--accent);stroke-width:1.5;opacity:.5;transform-box:fill-box;transform-origin:center;animation:vtlpulse 1.8s ease-out infinite}
+  @keyframes vtlpulse{0%{transform:scale(.8);opacity:.6}100%{transform:scale(2.2);opacity:0}}
+  :root[data-theme="dark"] .vtl .ln{stroke:#3E5585}
   .edge{fill:none;stroke:#D2D6D8;stroke-width:1.3}
   .edge.fu{stroke:#E0E3E5;stroke-dasharray:3 4}
 

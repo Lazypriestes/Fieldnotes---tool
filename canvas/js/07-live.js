@@ -373,6 +373,7 @@
     setTimeout(function () { el.remove(); }, 320);
   }
   function notify(note) {
+    note.at = note.at || current; note.idx = note.idx != null ? note.idx : liveIdx;   // for the side timeline
     notes.push(note); badge(note.topic); toast(note); drawInspector();
   }
 
