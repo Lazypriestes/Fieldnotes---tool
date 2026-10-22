@@ -133,7 +133,6 @@
   function editUserMark(m) {
     composer('EDIT NOTE', '', 'Edit this note', function (t) {
       m.text = t;
-      if (m.wnode) m.wnode.querySelector('.wn-tx').textContent = t;
       shareItem('note', m);
     }, m.text);
   }
@@ -146,17 +145,6 @@
     attachTip(dot, function () { return (m.from ? 'NOTE FROM THE OTHER INTERVIEWER · ' : 'YOUR NOTE · ') + fmtTime(timeAtIdx(m.idx)) + ' · click to edit'; }, function () { return m.text; });
     dot.addEventListener('click', function (ev) { ev.stopPropagation(); editUserMark(m); });
     $('tlTrack').appendChild(dot); m.el = dot; userMarks.push(m);
-    // drop a note card into the sequence where we are — visible only on the mind-map page
-    var host = INDEX[current];
-    if (host && host.x != null) {
-      var wn = document.createElement('div');
-      wn.className = 'worldnote';
-      wn.style.left = (host.x + W[host.depth] + 44) + 'px';
-      wn.style.top = (host.y - 4) + 'px';
-      wn.innerHTML = '<div class="wn-h">NOTE · ' + fmtTime(timeAtIdx(m.idx)) + '</div><div class="wn-tx">' + esc(text) + '</div>';
-      wn.addEventListener('click', function (ev) { ev.stopPropagation(); editUserMark(m); });
-      world.appendChild(wn); m.wnode = wn;
-    }
     updateTL();
     if (!opt.quiet) shareItem('note', m);
     return m;

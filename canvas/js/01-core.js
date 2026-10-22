@@ -7,14 +7,14 @@
       palInput = $('palInput'), palList = $('palList'), runBtn = $('runBtn'),
       posLabel = $('posLabel'), countEl = $('count'), legendLive = $('legendLive'),
       zoomVal = $('zoomVal'), hint = $('hint'), toasts = $('toasts'),
-      annolayer = $('annolayer'), leads = $('leads'), noteCnt = $('noteCnt'),
+      annolayer = $('annolayer'), leads = $('leads'),
       addNoteBtn = $('addNote'), layerSw = $('layerSw'), dropline = $('dropline'), editBtn = $('editBtn'),
       resizer = $('resizer'), bodyEl = document.querySelector('.body'),
       followBtn = $('followBtn'), pauseBtn = $('pauseBtn');
 
   // top bar removed — its controls now live on the canvas; keep detached stubs so old refs stay safe
   var _stub = document.createElement('div');
-  noteCnt = noteCnt || _stub; addNoteBtn = addNoteBtn || _stub; layerSw = layerSw || _stub;
+  addNoteBtn = addNoteBtn || _stub; layerSw = layerSw || _stub;
   editBtn = editBtn || _stub; followBtn = followBtn || _stub;
   hint = hint || _stub; countEl = countEl || _stub;
   legendLive = legendLive || _stub; posLabel = posLabel || _stub;   // the bottom legend bar is gone too

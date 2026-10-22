@@ -12,8 +12,28 @@
 <div class="app" id="app">
 
   <div class="spine">
+    <div class="filemenu" id="filemenu">
+      <button class="filebtn" id="fileBtn" title="Switch tree / new page">
+        <svg class="fi" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 2.5h5l3 3v8H4z"/><path d="M9 2.5v3h3"/></svg>
+        <span class="fname" id="fileName">file</span>
+        <svg class="fchev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg>
+      </button>
+      <div class="filelist" id="fileList" hidden></div>
+    </div>
     <div class="track" id="track"></div>
-    <button class="k mono" id="palBtn">⌘K</button>
+    <div class="pages" role="tablist" aria-label="Page">
+      <button data-scene="tree" role="tab">Tree</button><button data-scene="notes" role="tab">Annotation</button><button data-scene="mindmap" role="tab">Mind map</button>
+    </div>
+    <button class="followpill" id="followPill" hidden></button>
+    <div class="zoomctl">
+      <button class="zb" id="zoomOut" aria-label="Zoom out">−</button>
+      <span class="z zb" id="zoomVal">100%</span>
+      <button class="zb" id="zoomIn" aria-label="Zoom in">+</button>
+      <button id="fit" class="mono zb">FIT</button>
+      <button id="themeBtn" class="mono" title="Toggle dark mode" aria-label="Toggle dark mode">☾</button>
+      <button id="helpBtn" class="mono" title="Controls & shortcuts (?)" aria-label="Help">?</button>
+    </div>
+    <button class="k mono" id="palBtn" title="Jump to a question (⌘K)">⌘K</button>
   </div>
 
   <div class="body">
@@ -56,28 +76,6 @@
             <span class="dtip">Last 10s · hold to keep recording<b>R</b></span>
           </button>
         </div>
-        <div class="dsep"></div>
-        <div class="dgrp">
-          <button class="dbtn" data-scene="tree" aria-label="Tree view">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="8" width="5" height="4" rx="1"/><rect x="13" y="3" width="4.5" height="4" rx="1"/><rect x="13" y="13" width="4.5" height="4" rx="1"/><path d="M7.5 10h3M10.5 10V5H13M10.5 10v5H13"/></svg>
-            <span class="dtip">Tree<b>S</b></span>
-          </button>
-          <button class="dbtn" data-scene="notes" aria-label="Annotation view">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 4.5h13v8H8l-3.5 3.5v-3.5H3.5z"/><path d="M6.5 8h7M6.5 10.5h4"/></svg>
-            <span class="dtip">Annotation<b>S</b></span>
-          </button>
-          <button class="dbtn" data-scene="mindmap" aria-label="Mind map view">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="2.4"/><circle cx="4" cy="4.5" r="1.7"/><circle cx="16" cy="4.5" r="1.7"/><circle cx="4" cy="15.5" r="1.7"/><circle cx="16" cy="15.5" r="1.7"/><path d="M8.2 8.6 5.4 5.9M11.8 8.6l2.8-2.7M8.2 11.4l-2.8 2.7M11.8 11.4l2.8 2.7"/></svg>
-            <span class="dtip">Mind map<b>S</b></span>
-          </button>
-        </div>
-        <div class="dsep"></div>
-        <div class="dgrp">
-          <button class="dbtn" data-act="follow" aria-label="Follow camera">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="5.5"/><circle cx="10" cy="10" r="1.4" fill="currentColor" stroke="none"/><path d="M10 1.8v2.6M10 15.6v2.6M1.8 10h2.6M15.6 10h2.6"/></svg>
-            <span class="dtip">Follow camera<b>F</b></span>
-          </button>
-        </div>
       </div>
 
       <div class="transport" id="transport">
@@ -100,23 +98,7 @@
         <button id="sessBtn" title="Interview session — autosave log, download, open" aria-label="Interview session"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 2.5h8l2.5 2.5v8.5H3z"/><path d="M5.5 2.5v3.5h5V2.5M5.5 13.5V9.5h5v4"/></svg></button>
       </div>
 
-      <div class="zoomctl">
-        <button id="zoomOut" aria-label="Zoom out">−</button>
-        <span class="z" id="zoomVal">100%</span>
-        <button id="zoomIn" aria-label="Zoom in">+</button>
-        <button id="fit" class="mono">FIT</button>
-        <button id="themeBtn" class="mono" title="Toggle dark mode" aria-label="Toggle dark mode">☾</button>
-        <button id="helpBtn" class="mono" title="Controls & shortcuts (?)" aria-label="Help">?</button>
-      </div>
 
-      <div class="filemenu" id="filemenu">
-        <button class="filebtn" id="fileBtn" title="Switch tree / new page">
-          <svg class="fi" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 2.5h5l3 3v8H4z"/><path d="M9 2.5v3h3"/></svg>
-          <span class="fname" id="fileName">file</span>
-          <svg class="fchev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg>
-        </button>
-        <div class="filelist" id="fileList" hidden></div>
-      </div>
       <div class="xmodal" id="exportModal" hidden role="dialog" aria-modal="true" aria-labelledby="xTitleLbl">
         <div class="xcard">
           <div class="xhd"><span id="xTitleLbl">Export document</span><span class="sp"></span><button class="xclose" data-xclose aria-label="Close">×</button></div>
@@ -182,52 +164,61 @@
       <div class="help-hd"><b>Fieldnotes — controls</b><button class="help-x" id="helpX" aria-label="Close">×</button></div>
       <div class="help-grid">
         <div class="help-sec"><h4>Run</h4>
-          <div><span>Demo (canned)</span><kbd>▶</kbd></div>
-          <div><span>Go live · pick source</span><kbd>◉</kbd></div>
-          <div><span>Pause / stop</span><kbd>⏸</kbd><kbd>■</kbd></div>
-          <div><span>Live sources</span><em>Sample · Mic · System/Teams</em></div>
+          <div><span>Go live · pick the source first</span><kbd>◉</kbd></div>
+          <div><span>Off the record · nothing transcribed</span><kbd>⏸</kbd></div>
+          <div><span>Stop</span><kbd>■</kbd></div>
+          <div><span>Demo (Sample source only)</span><kbd>▶</kbd></div>
+        </div>
+        <div class="help-sec"><h4>Top bar</h4>
+          <div><span>Switch tree · new · import · export</span><em>tree menu ▾</em></div>
+          <div><span>Go to a topic</span><em>topic tabs</em></div>
+          <div><span>Tree · Annotation · Mind map</span><kbd>S</kbd></div>
+          <div><span>Following / back to live</span><kbd>F</kbd></div>
+          <div><span>Jump to a question</span><kbd>⌘K</kbd></div>
         </div>
         <div class="help-sec"><h4>Canvas</h4>
-          <div><span>Pan</span><em>drag empty space</em></div>
+          <div><span>Pan</span><em>drag empty space · scroll</em></div>
           <div><span>Zoom</span><kbd>⌥ scroll</kbd></div>
-          <div><span>Fit / zoom / dark</span><em>top-left</em></div>
-          <div><span>Switch trees / new</span><em>file menu ▾</em></div>
-        </div>
-        <div class="help-sec"><h4>Keys</h4>
+          <div><span>Undo / redo (tree and notes)</span><kbd>⌘Z</kbd><kbd>⇧⌘Z</kbd></div>
           <div><span>Edit mode</span><kbd>E</kbd></div>
-          <div><span>Cycle scene</span><kbd>S</kbd></div>
-          <div><span>Follow camera</span><kbd>F</kbd></div>
-          <div><span>Jump to question</span><kbd>⌘K</kbd></div>
-          <div><span>Undo / redo</span><kbd>⌘Z</kbd><kbd>⌘⇧Z</kbd></div>
         </div>
         <div class="help-sec"><h4>Edit mode</h4>
-          <div><span>Rename</span><em>double-click node</em></div>
-          <div><span>Reorder</span><em>drag node</em></div>
+          <div><span>Rename</span><em>double-click a question</em></div>
+          <div><span>Reorder</span><em>drag a question</em></div>
           <div><span>Sibling / child</span><kbd>⏎</kbd><kbd>⇥</kbd></div>
           <div><span>Delete</span><kbd>⌫</kbd></div>
         </div>
-        <div class="help-sec"><h4>Live capture</h4>
-          <div><span>Add note</span><kbd>N</kbd></div>
-          <div><span>Add question</span><kbd>Q</kbd></div>
-          <div><span>Record clip · from 10s back until release</span><kbd>R</kbd></div>
-          <div><span>Off the record (live) · nothing transcribed</span><kbd>⏸</kbd></div>
-          <div><span>Rate a clip</span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>N</kbd></div>
+        <div class="help-sec"><h4>During an interview</h4>
+          <div><span>Note (a dot on the left timeline)</span><kbd>N</kbd></div>
+          <div><span>Add a question</span><kbd>Q</kbd></div>
+          <div><span>Record · from 10 s back until release</span><kbd>R</kbd></div>
+          <div><span>Rate the clip</span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>N</kbd></div>
+          <div><span>Answered ahead · click the pop-up</span><em>goes there</em></div>
         </div>
         <div class="help-sec"><h4>Notes</h4>
-          <div><span>Add note</span><em>double-click / dock</em></div>
-          <div><span>Connect to a question</span><em>drag a side dot →</em></div>
-          <div><span>Mind-map only</span><em>corner icon → dot</em></div>
-          <div><span>Delete</span><em>× on hover</em></div>
+          <div><span>New note</span><em>double-click the canvas</em></div>
+          <div><span>Fold into a dot / keep open</span><em>eye icon</em></div>
+          <div><span>Connect to a question</span><em>drag a side dot · the ring on a dot</em></div>
+          <div><span>Resize</span><em>corner grip</em></div>
+          <div><span>Delete</span><em>× · right-click a dot</em></div>
         </div>
-        <div class="help-sec"><h4>Inspector (right)</h4>
-          <div><span>Edit question text</span><em>click field</em></div>
-          <div><span>Cues: asking / answered</span><em>+ add · × remove</em></div>
-          <div><span>Auto-generate cues</span><kbd>✦ auto</kbd> <em>(local AI)</em></div>
+        <div class="help-sec"><h4>Left timeline</h4>
+          <div><span>The interview so far, down to now</span><em>left of the tree</em></div>
+          <div><span>Question asked · answered ahead · added</span><em>dash · amber ◆ · teal ●</em></div>
+          <div><span>Recorded part</span><em>red line</em></div>
+          <div><span>Go to it</span><em>click a mark</em></div>
         </div>
-        <div class="help-sec"><h4>Timeline (live)</h4>
-          <div><span>Scrub to the past</span><em>drag the head</em></div>
-          <div><span>Back to now</span><kbd>GO LIVE</kbd></div>
-          <div><span>Answered-ahead</span><em>amber marks</em></div>
+        <div class="help-sec"><h4>Mind map</h4>
+          <div><span>Open a topic</span><em>click it</em></div>
+          <div><span>Move around · zoom</span><em>drag · ⌥ scroll</em></div>
+          <div><span>Back to the centre</span><kbd>F</kbd></div>
+          <div><span>Notes · recordings on a question</span><em>✎ / ● pills</em></div>
+        </div>
+        <div class="help-sec"><h4>Colours</h4>
+          <div><span><i class="hsw" style="background:var(--green)"></i>answered <i class="hsw" style="background:var(--amber)"></i>touched <i class="hsw" style="background:var(--red)"></i>not yet</span></div>
+          <div><span><i class="hsw" style="background:var(--accent-soft);border:1px solid #93AEE6"></i>opener <i class="hsw" style="border:1px dotted var(--muted)"></i>probe (optional)</span></div>
+          <div><span><i class="hsw" style="border:1px dashed var(--teal)"></i>added during the interview</span></div>
+          <div><span><i class="hsw" style="background:#8B5CF6;border-radius:50%"></i>note <i class="hsw" style="background:var(--red);width:3px"></i>recorded</span></div>
         </div>
       </div>
       <div class="help-ft">Everything runs locally · <kbd>?</kbd> or <kbd>Esc</kbd> to close</div>

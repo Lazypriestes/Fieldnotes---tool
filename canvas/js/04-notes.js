@@ -216,6 +216,10 @@
       pageNotes.forEach(function (p) { p.links = p.links.filter(function (l) { return l !== note.id; }); });
       drawConns(); scheduleFileSave();
     });
+    el.addEventListener('contextmenu', function (ev) {
+      if (!el.classList.contains('collapsed')) return;     // open notes keep the normal menu (copy, etc.)
+      ev.preventDefault(); el.querySelector('.pn-del').click();
+    });
     // corner grip: drag to resize (double-click it to go back to the default size)
     var rs = el.querySelector('.pn-rs');
     rs.addEventListener('pointerdown', function (ev) {
@@ -339,6 +343,7 @@
     b.innerHTML = note.folded ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/><path d="M2.5 2.5l11 11"/></svg>' : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
     b.title = note.folded ? 'Folded into a dot — click to keep it open' : 'Kept open — click to fold it into a dot';
     b.setAttribute('aria-label', b.title); b.setAttribute('aria-pressed', String(!note.folded));
+    note.el.title = note.folded ? 'Click to open · right-click to delete · drag the ring to connect' : '';
   }
   function clearPageNotes() { pageNotes.forEach(function (n) { n.el.remove(); }); pageNotes = []; if (conns) conns.innerHTML = ''; }
   function rebuildPageNotes(arr) {

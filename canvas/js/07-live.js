@@ -205,9 +205,9 @@
     TBASE = 0; notes = []; state = {};
     liveIdx = -1; viewIdx = -1; reviewing = false; tlDrag = false; userMarks = []; tlCursorX = null; hideTip();
     if (recTimer) { clearInterval(recTimer); recTimer = null; } recSpan = null; redSpans = []; hideRater();
-    document.querySelectorAll('.worldnote').forEach(function (n) { n.remove(); });
+   
     setEdit(false); setFollow(true, true);
-    app.classList.add('live'); app.classList.add('live-real');
+    app.classList.add('live'); app.classList.add('live-real'); setPanel(false);
     NODES.forEach(function (n) { if (n.depth === 1) { state[n.id] = 'red'; n.el.dataset.s = 'red'; } });
     legendLive.hidden = false; hint.hidden = true;
     runBtn.innerHTML = ICON_STOP; runBtn.classList.add('on'); runBtn.title = 'Stop live interview';
@@ -430,9 +430,9 @@
     live = true; step = 0; notes = []; state = {}; t0 = Date.now();
     paused = false; pauseOffset = 0;
     liveIdx = -1; viewIdx = -1; reviewing = false; tlDrag = false; userMarks = []; tlCursorX = null; hideTip();
-    if (recTimer) { clearInterval(recTimer); recTimer = null; } recSpan = null; redSpans = []; hideRater(); document.querySelectorAll('.worldnote').forEach(function (n) { n.remove(); });
+    if (recTimer) { clearInterval(recTimer); recTimer = null; } recSpan = null; redSpans = []; hideRater();
     setEdit(false); setFollow(true, true);
-    app.classList.add('live');
+    app.classList.add('live'); setPanel(false);
     NODES.forEach(function (n) {
       if (n.depth === 1) { state[n.id] = 'red'; n.el.dataset.s = 'red'; }
     });
@@ -470,7 +470,7 @@
     app.classList.remove('live-real');
     if (liveBtn) liveBtn.classList.remove('on');
     reviewing = false; liveIdx = -1; viewIdx = -1; tlDrag = false; userMarks = []; hideTip();
-    if (recTimer) { clearInterval(recTimer); recTimer = null; } recSpan = null; redSpans = []; hideRater(); document.querySelectorAll('.worldnote').forEach(function (n) { n.remove(); });
+    if (recTimer) { clearInterval(recTimer); recTimer = null; } recSpan = null; redSpans = []; hideRater();
     setDockLive(false);
     app.classList.remove('live');
     NODES.forEach(function (n) { delete n.el.dataset.s; n.el.classList.remove('cur'); n.el.classList.remove('next'); });

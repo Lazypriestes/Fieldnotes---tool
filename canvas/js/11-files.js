@@ -54,8 +54,7 @@
   }
   function clearSessionArt() {
     if (live) stopLive();
-    if (typeof stickies !== 'undefined') { stickies.forEach(function (s) { s.el.remove(); }); stickies.length = 0; }
-    clearAnnos(); if (typeof updateCount === 'function') updateCount();
+    clearAnnos();
   }
   function loadFile(id, frameIt) {
     var f = FILES.filter(function (x) { return x.id === id; })[0]; if (!f) return;

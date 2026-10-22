@@ -2,7 +2,7 @@
   /* ---------- pan & zoom ---------- */
   var pan = null;
   viewport.addEventListener('pointerdown', function (e) {
-    var ui = '.vtl .hit,.debrief,.zoomctl,.caps,.anode,.sticky,.dock,.transport,.rater,.qnote,.livenote,.worldnote,.filemenu,.pnote,.conn-hit,.mmcard,.mmscript,.mmchips,.mmhit,.xmodal,.spkpop';
+    var ui = '.vtl .hit,.debrief,.zoomctl,.caps,.anode,.dock,.transport,.rater,.qnote,.livenote,.filemenu,.pnote,.conn-hit,.xmodal,.spkpop';
     var block = layerName === 'notes' ? ui : '.node,.fold,.ghost,' + ui;
     if (e.target.closest(block)) return;
     breakFollow();
@@ -206,7 +206,7 @@
     var f = e.target.closest('[data-fold]');
     if (f) { var m = INDEX[f.dataset.fold]; m.collapsed = !m.collapsed; ensureFold(m); LAYOUT_ANIM.anchor = m; layout(); return; }
     var nd = e.target.closest('[data-id]');
-    if (nd && !dragMoved) select(nd.dataset.id, false);
+    if (nd && !dragMoved) { select(nd.dataset.id, false); if (live && !panelOpen) setPanel(true); }   // live: panel opens on demand
   });
 
   var allOpen = false;

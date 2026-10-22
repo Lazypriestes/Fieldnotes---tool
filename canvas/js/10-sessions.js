@@ -196,6 +196,7 @@
 
   // play / pause belong to the Sample demo only
   function syncTransport() {
+    syncFollowPill();
     var src = ($('srcSel') && $('srcSel').value) || 'sample';
     $('iv2Sel').hidden = src !== 'call';
     $('iv2Sel').disabled = live;                       // fixed for the length of an interview
@@ -278,7 +279,7 @@
     } else if (ev.kind === 'note') {
       var m = userMarks.filter(function (x) { return x.uid === ev.uid; })[0];
       if (!m) addUserMark(v.idx, v.text, { uid: ev.uid, from: who, host: v.host, quiet: true });
-      else { m.text = v.text; if (m.wnode) m.wnode.querySelector('.wn-tx').textContent = v.text; }
+      else m.text = v.text;
     }
   }
 

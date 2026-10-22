@@ -1,6 +1,6 @@
-  // 06-annotation.js — Annotation page and stickies, side panel, follow, edit mode. All files share one closure: see ui_asset() in analysis/assistant.py.
-  /* ---------- annotation layer & stickies ---------- */
-  var annoList = [], stickies = [], stickySeq = 0, layerName = 'tree';
+  // 06-annotation.js — Annotation page, side panel, follow, edit mode. All files share one closure: see ui_asset() in analysis/assistant.py.
+  /* ---------- annotation layer ---------- */
+  var annoList = [], layerName = 'tree';
 
   function addAnno(id, text, kind) {
     var n = INDEX[id]; if (!n) return;
@@ -14,7 +14,7 @@
       '<div class="tx" contenteditable="true" spellcheck="false">' + esc(text) + '</div>';
     a.el = el; annoList.push(a); annolayer.appendChild(el);
     if (n.parent && n.parent.collapsed) { n.parent.collapsed = false; ensureFold(n.parent); }
-    updateCount(); scheduleLayout();
+    scheduleLayout();
   }
   // Live coverage can add several annotations per poll; coalesce them into one layout per
   // frame instead of a full re-layout (edges, notes, connectors) for every single match.
@@ -24,8 +24,7 @@
     layoutQueued = true;
     requestAnimationFrame(function () { layoutQueued = false; layout(); });
   }
-  function clearAnnos() { annoList.forEach(function (a) { a.el.remove(); }); annoList = []; updateCount(); layoutAnnos(); }
-  function updateCount() { noteCnt.textContent = annoList.length + stickies.length; }
+  function clearAnnos() { annoList.forEach(function (a) { a.el.remove(); }); annoList = []; layoutAnnos(); }
 
   function layoutAnnos() {
     var lanes = {}, paths = [];
@@ -49,35 +48,9 @@
     leads.innerHTML = paths.join('');
   }
 
-  function addSticky(x, y, text) {
-    var st = { id: 'st' + (++stickySeq), x: x, y: y };
-    var el = document.createElement('div');
-    el.className = 'sticky';
-    el.style.left = x + 'px'; el.style.top = y + 'px';
-    el.innerHTML = '<div class="top"><span>NOTE ' + stickySeq + '</span><span class="sp"></span>' +
-      '<button class="del">×</button></div>' +
-      '<div class="tx" contenteditable="true" spellcheck="false" data-ph="Type a comment…">' + esc(text || '') + '</div>';
-    st.el = el; stickies.push(st); annolayer.appendChild(el);
-    el.querySelector('.del').addEventListener('click', function (ev) {
-      ev.stopPropagation(); el.remove();
-      stickies = stickies.filter(function (s) { return s !== st; }); updateCount();
-    });
-    el.addEventListener('pointerdown', function (ev) {
-      if (ev.target.closest('.del')) return;
-      grabNote(el, ev, el.querySelector('.tx'), st);
-    });
-    updateCount();
-    setTimeout(function () { el.querySelector('.tx').focus(); }, 30);
-    return st;
-  }
-  addNoteBtn.addEventListener('click', function () {
-    var r = viewport.getBoundingClientRect();
-    var p = toWorld(r.left + viewport.clientWidth / 2, r.top + vh() / 2);
-    addSticky(p.x - 93, p.y - 30);
-  });
   viewport.addEventListener('dblclick', function (e) {
     if (editing || layerName === 'mindmap') return;
-    if (e.target.closest('.node,.fold,.ghost,.pnote,.sticky,.anode,.zoomctl,.caps,.dock,.transport,.filemenu,.conn-hit,.rater,.qnote,.xmodal,.spkpop')) return;
+    if (e.target.closest('.node,.fold,.ghost,.pnote,.anode,.zoomctl,.caps,.dock,.transport,.filemenu,.conn-hit,.rater,.qnote,.xmodal,.spkpop')) return;
     var p = toWorld(e.clientX, e.clientY);
     addPageNote(p.x, p.y);            // notes are addable anytime, right on the canvas
   });
@@ -90,8 +63,9 @@
     layerSw.querySelectorAll('[data-layer]').forEach(function (b) {
       b.setAttribute('aria-pressed', String(b.dataset.layer === name));
     });
-    var d = $('dock');
-    if (d) d.querySelectorAll('[data-scene]').forEach(function (b) { b.classList.toggle('on', b.dataset.scene === name); });
+    document.querySelectorAll('.pages [data-scene]').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.scene === name); b.setAttribute('aria-selected', String(b.dataset.scene === name));
+    });
     hint.textContent = name === 'notes' ? 'DOUBLE-CLICK TO DROP A STICKY'
       : name === 'mindmap' ? 'MIND MAP · CLICK A TOPIC · DRAG TO MOVE AROUND · ⌥SCROLL TO ZOOM · F RECENTERS'
       : 'DRAG TO PAN · ⌥SCROLL TO ZOOM · E TO EDIT';
@@ -117,8 +91,9 @@
       else if (a.dataset.act === 'record') { startRec(false); stopRec(); }
       return;
     }
-    var s = e.target.closest('[data-scene]');
-    if (s) setLayer(s.dataset.scene);
+  });
+  document.querySelector('.pages').addEventListener('click', function (e) {
+    var s = e.target.closest('[data-scene]'); if (s) setLayer(s.dataset.scene);
   });
   layerSw.addEventListener('click', function (e) {
     var b = e.target.closest('[data-layer]'); if (b) setLayer(b.dataset.layer);
@@ -172,9 +147,20 @@
     if (fb) { fb.classList.toggle('on', follow); fb.querySelector('.dtip').firstChild.textContent = follow ? 'Following camera' : 'Free roam'; }
     var st = caps.querySelector('.roam');
     if (st) st.textContent = follow ? '' : 'free roam';
+    syncFollowPill();
     if (follow && !silent && live && INDEX[current]) centerOn(INDEX[current], Math.max(cam.z, .78), true);
   }
   followBtn.addEventListener('click', function () { setFollow(!follow); });
+  // top bar, during an interview: "Following" while the view tracks the question being asked;
+  // "Back to live" (F) once you've moved away, so it's never a mystery why the view stays put
+  function syncFollowPill() {
+    var p = $('followPill'); if (!p) return;
+    p.hidden = !live;
+    p.classList.toggle('off', !follow);
+    p.innerHTML = follow ? '<i></i>Following' : 'Back to live <b>F</b>';
+    p.title = follow ? 'The view follows the question being asked — click to look around freely' : 'Go back to the question being asked';
+  }
+  $('followPill').addEventListener('click', function () { setFollow(!follow); });
   function breakFollow() { if (live && follow) setFollow(false, true); }
 
   /* ---------- edit mode ---------- */
