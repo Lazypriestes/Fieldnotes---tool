@@ -745,6 +745,10 @@
   .db-nt.clip:hover{background:rgba(196,105,90,.15)}
   .db-nt.clip[aria-expanded="true"]{background:var(--red);border-color:var(--red);color:#FFF}
   .db-clips{margin:6px 0 0 11px;display:grid;gap:8px}
+  .db-quote.rec{position:relative;padding-left:14px}
+  .db-quote.rec::before{content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;border-radius:1px;background:var(--red)}
+  .db-recend{display:block;margin:3px 0 0 3px;font-size:10.5px;color:var(--red);border-radius:4px;padding:0 4px;text-align:left}
+  .db-recend:hover,.db-recend[aria-expanded="true"]{background:rgba(196,105,90,.1)}
   .db-q.added{border:1px dashed var(--green);border-radius:8px;padding:6px 8px;background:rgba(78,154,107,.05)}
   .addtag{font-size:10px;color:var(--green);border:1px dashed var(--green);border-radius:8px;padding:0 5px}
   :root[data-theme="dark"] .db-chip.note,:root[data-theme="dark"] .db-nt:not(.clip):not([aria-expanded="true"]){color:#B7A6F2}
@@ -1661,6 +1665,15 @@
   function dbClipList(key, clips, sess) {
     return '<div class="db-clips" data-notesfor="c:' + key + '">' + clips.map(function (x) { return dbClipHTML(x, sess); }).join('') + '</div>';
   }
+  function dbRecEnd(x, sess) {
+    var c = x.c, k = 'r' + Math.round(c.startMs) + '-' + Math.round(c.endMs), on = !!dbNotesOpen[k];
+    var rx = c.reaction ? reactMeta(c.reaction) : null, nn = (c.notes || []).length;
+    return '<button class="db-recend" data-dbnotes="' + k + '" aria-expanded="' + on + '" title="' + (on ? 'Hide' : 'Show') + ' this recording">' +
+      '● Recorded ' + fmtTime(sess.tbase + c.startMs / 1000) + '–' + fmtTime(sess.tbase + c.endMs / 1000) +
+      (rx ? ' <span style="color:' + reactColor(c.reaction) + '">' + rx.g + '</span>' : '') +
+      (nn ? ' · ✎ ' + nn : '') + '</button>' +
+      (on ? '<div class="db-clips" data-notesfor="' + k + '">' + dbClipHTML(x, sess) + '</div>' : '');
+  }
   function dbClipHTML(x, sess) {
     var c = x.c, key = 'c' + Math.round(c.startMs) + '-' + Math.round(c.endMs);
     var when = fmtTime(sess.tbase + c.startMs / 1000) + '–' + fmtTime(sess.tbase + c.endMs / 1000);
@@ -1776,8 +1789,24 @@
     d.answers.forEach(function (a) { (qsOf[a.i] = qsOf[a.i] || []).push(a.qid); });
     var inTopic = {};
     qsAll.forEach(function (q) { inTopic[q.id] = 1; });
+    // Recorded parts: a red line runs beside the green line of every quote spoken during the
+    // recording, and the recording's time sits under the last of those quotes. Work out first
+    // which quotes will be shown (same rule as below), so each recording knows where it ends.
+    var willShow = [], seen0 = {};
     qsAll.forEach(function (q) {
-      var as = byQ[q.id], ns = d.qnotes[q.id], cs = d.qclips[q.id];
+      var fr = (byQ[q.id] || []).filter(function (a) { return !seen0[a.i]; }).slice(0, 2);
+      fr.forEach(function (a) { seen0[a.i] = 1; willShow.push(a.i); });
+    });
+    var recOf = {}, recEnd = {}, covered = [];            // step -> clip; clip index -> last shown step
+    d.clips.forEach(function (x, ci) {
+      var last = -1;
+      willShow.forEach(function (i, pos) { if (x.inWin.indexOf(i) >= 0) { recOf[i] = x; last = pos; } });
+      if (last >= 0) { recEnd[willShow[last]] = (recEnd[willShow[last]] || []).concat([x]); covered.push(x); }
+    });
+    var uncovered = function (list) { return list && list.filter(function (x) { return covered.indexOf(x) < 0; }); };
+    qsAll.forEach(function (q) {
+      var as = byQ[q.id], ns = d.qnotes[q.id], cs = uncovered(d.qclips[q.id]);
+      if (cs && !cs.length) cs = null;
       if (!as && !ns && !cs && !q.added) { if (q.kind !== 'opener' && q.depth === 1 && dbState(sess)[q.id] !== 'green') open.push(q); return; }
       h += '<div class="db-q' + (q.added ? ' added' : '') + '"><div class="db-qh"><button class="ql" data-goto="' + q.id + '" title="Show on the tree"><b>' +
         esc(mmQLabel(q)) + '</b> ' + (q.added ? '<span class="addtag">Added</span> ' : '') + esc(q.text) + '</button>' +
@@ -1790,16 +1819,17 @@
         shown[a.i] = 1;
         var also = qsOf[a.i].filter(function (id) { return id !== q.id && INDEX[id]; })
           .map(function (id) { return mmQLabel(INDEX[id]); });
-        return '<div class="db-quote' + (a.ahead ? ' ahead' : '') + '">' + anonHTML(a.text) +
+        return '<div class="db-quote' + (a.ahead ? ' ahead' : '') + (recOf[a.i] ? ' rec' : '') + '">' + anonHTML(a.text) +
           (a.ahead ? '<span class="tag">answered ahead</span>' : '') +
-          (also.length ? '<span class="also">Also answers ' + esc(also.join(', ')) + '</span>' : '') + '</div>';
+          (also.length ? '<span class="also">Also answers ' + esc(also.join(', ')) + '</span>' : '') + '</div>' +
+          (recEnd[a.i] || []).map(function (x) { return dbRecEnd(x, sess); }).join('');
       }).join('') +
         (fresh.length > 2 ? '<div class="more">+' + (fresh.length - 2) + ' more on the tree</div>' : '') + tail + '</div>';
     });
     // notes taken on the topic itself rather than one of its questions
     var other = [], otherC = [];
     Object.keys(d.qnotes).forEach(function (id) { if (!inTopic[id]) other = other.concat(d.qnotes[id]); });
-    Object.keys(d.qclips).forEach(function (id) { if (!inTopic[id]) otherC = otherC.concat(d.qclips[id]); });
+    Object.keys(d.qclips).forEach(function (id) { if (!inTopic[id]) otherC = otherC.concat(uncovered(d.qclips[id])); });
     if (other.length || otherC.length) {
       var k = 'T' + t.id;
       h += '<div class="db-q"><div class="db-qh"><span class="ql">On the topic as a whole</span>' +
