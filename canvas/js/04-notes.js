@@ -110,14 +110,14 @@
     var parts = [];
     pageNotes.forEach(function (note) {
       var collapsed = note.el.classList.contains('collapsed');
-      var w = collapsed ? 16 : (note.el.offsetWidth || 184), h = collapsed ? 16 : (note.el.offsetHeight || 46);
+      var w = collapsed ? 14 : (note.el.offsetWidth || 184), h = collapsed ? 14 : (note.el.offsetHeight || 46);
       var nx = note.x + w / 2, ny = note.y + h / 2;
       note.links.forEach(function (qid) {
         var other = noteById(qid);
         if (other) {                                      // note -> note: dashed, edge facing the source
           if (!other.el.isConnected) return;
           var oc = other.el.classList.contains('collapsed');
-          var ow = oc ? 16 : (other.el.offsetWidth || 184), oh = oc ? 16 : (other.el.offsetHeight || 46);
+          var ow = oc ? 14 : (other.el.offsetWidth || 184), oh = oc ? 14 : (other.el.offsetHeight || 46);
           var bcx = other.x + ow / 2, bcy = other.y + oh / 2, d2;
           if (Math.abs(bcx - nx) >= Math.abs(bcy - ny)) {
             var ex = bcx > nx ? other.x : other.x + ow, sx = bcx > nx ? 1 : -1, ddx = Math.max(28, Math.abs(ex - nx) / 2);

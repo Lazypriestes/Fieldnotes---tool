@@ -198,7 +198,7 @@
   function dropLiveNoteDot(text) {
     var q = INDEX[current]; if (!q || q.y == null) return;
     pushHistory();
-    var note = addPageNote(VTL_X + LANE.note - 9, q.y + q.h / 2 - 9, { text: text, folded: true, live: true, at: q.id });
+    var note = addPageNote(VTL_X + LANE.note - 7, q.y + q.h / 2 - 7, { text: text, folded: true, live: true, at: q.id });
     drawVTL();                                           // puts it on the notes lane, next to any others
     scheduleFileSave();
     pop(note.el, { scale: [0.3, 1] }, { type: 'spring', visualDuration: 0.3, bounce: 0.3 });
@@ -211,7 +211,8 @@
      its left. Click an event to scrub the bottom timeline to that moment. */
   var VTL_X = -70, vtl = null;
   // every mark has its own lane, a fixed distance from the line, so the gaps are always the same
-  var LANE = { tick0: 4, tick1: 12, clip: -8, ahead: -16, add: -24, note: -38, noteStep: 22 };
+  // all on the left of the line, 7px apart; question, answered-ahead and added marks are one size
+  var LANE = { clip: -4, ask: -11, ahead: -18, add: -25, note: -38, noteStep: 20, mark: 2.5 };
   function drawVTL() {
     vtl = vtl || world.querySelector('svg.vtl');          // the tree can draw before this file has run
     if (!vtl) {
@@ -243,7 +244,7 @@
       prev = c; var y = yOf(c); if (y == null) continue;
       ys.push(y);
       p.push('<g class="hit" data-idx="' + i + '">' + tip(mmQLabel(INDEX[c]) + ' asked · ' + at(i)) +
-        '<rect x="' + (x + 1) + '" y="' + (y - 5) + '" width="15" height="10"/><line class="tk" x1="' + (x + LANE.tick0) + '" y1="' + y + '" x2="' + (x + LANE.tick1) + '" y2="' + y + '"/></g>');
+        '<circle class="pad" cx="' + (x + LANE.ask) + '" cy="' + y + '" r="5"/><line class="tk" x1="' + (x + LANE.ask - LANE.mark) + '" y1="' + y + '" x2="' + (x + LANE.ask + LANE.mark) + '" y2="' + y + '"/></g>');
     }
     sess.clips.forEach(function (cl) {                    // recorded parts: red bars left of the line
       var i0 = -1, i1 = -1;
@@ -252,22 +253,26 @@
       var a = yOf(mmCurAt(sess, i0)), b = yOf(mmCurAt(sess, i1)); if (a == null || b == null) return;
       var y0 = Math.min(a, b) - 2, h = Math.max(4, Math.abs(b - a) + 4);
       p.push('<g class="hit" data-idx="' + i0 + '">' + tip('Recorded ' + fmtTime(sess.tbase + cl.startMs / 1000) + '–' + fmtTime(sess.tbase + cl.endMs / 1000)) +
-        '<rect class="pad" x="' + (x + LANE.clip - 4) + '" y="' + (y0 - 3) + '" width="8" height="' + (h + 6) + '"/>' +
+        '<rect class="pad" x="' + (x + LANE.clip - 3) + '" y="' + (y0 - 3) + '" width="6" height="' + (h + 6) + '"/>' +
         '<rect class="clip" x="' + (x + LANE.clip - 0.75) + '" y="' + y0 + '" width="1.5" height="' + h + '" rx=".75"/></g>');
     });
+    var aheadAt = {}, aheadK = {};                        // several at one question: stack them 6px apart
+    (sess.ahead || []).forEach(function (n) { if (n.idx <= last) aheadAt[n.at] = (aheadAt[n.at] || 0) + 1; });
     (sess.ahead || []).forEach(function (n) {             // answered ahead: amber diamond, at the moment it happened
       if (n.idx > last) return;
-      var y = yOf(n.at); if (y == null) return;
-      var cx = x + LANE.ahead, r = 2.4;                    // left of the line; click = go to that question
+      var y0 = yOf(n.at); if (y0 == null) return;
+      var k = aheadK[n.at] || 0; aheadK[n.at] = k + 1;
+      var y = y0 + (k - (aheadAt[n.at] - 1) / 2) * 6;
+      var cx = x + LANE.ahead, r = LANE.mark;              // click = go to that question
       p.push('<g class="hit" data-jump="' + n.id + '">' + tip('Answered ahead: ' + n.label + ' — click to go there') +
-        '<circle class="pad" cx="' + cx + '" cy="' + y + '" r="7"/>' +
+        '<circle class="pad" cx="' + cx + '" cy="' + y + '" r="3"/>' +
         '<path class="ahead" d="M' + cx + ' ' + (y - r) + ' L' + (cx + r) + ' ' + y + ' L' + cx + ' ' + (y + r) + ' L' + (cx - r) + ' ' + y + 'Z"/></g>');
     });
     sess.marks.forEach(function (m) {                     // added questions: green dots
       if (!m.q || m.idx > last) return;
       var y = yOf(mmCurAt(sess, m.idx)); if (y == null) return;
       p.push('<g class="hit" data-idx="' + m.idx + '">' + tip('Question added: ' + m.text) +
-        '<circle class="pad" cx="' + (x + LANE.add) + '" cy="' + y + '" r="6"/><circle class="add" cx="' + (x + LANE.add) + '" cy="' + y + '" r="2.4"/></g>');
+        '<circle class="pad" cx="' + (x + LANE.add) + '" cy="' + y + '" r="5"/><circle class="add" cx="' + (x + LANE.add) + '" cy="' + y + '" r="' + (LANE.mark * 0.85) + '"/></g>');
     });
     // from the first question asked to the one being asked now (or the furthest reached,
     // if the interview went back up the tree)
@@ -287,7 +292,8 @@
       var an = mmVisibleAnchor(n.at); if (!an || an.y == null) return;
       var y = an.y + an.h / 2;
       var k = stack[an.id] || 0; stack[an.id] = k + 1;     // per visible spot, so folded questions' dots don't overlap
-      var nx = VTL_X + LANE.note - 9 - k * LANE.noteStep, ny = y - 9;
+      var half = (n.el.classList.contains('collapsed') ? n.el.offsetWidth || 14 : 14) / 2;
+      var nx = VTL_X + LANE.note - half - k * LANE.noteStep, ny = y - half;
       if (n.x !== nx || n.y !== ny) { n.x = nx; n.y = ny; n.el.style.left = nx + 'px'; n.el.style.top = ny + 'px'; moved = true; }
     });
     if (moved) drawConns();

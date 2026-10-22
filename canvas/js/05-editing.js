@@ -2,7 +2,7 @@
   /* ---------- pan & zoom ---------- */
   var pan = null;
   viewport.addEventListener('pointerdown', function (e) {
-    var ui = '.debrief,.zoomctl,.caps,.anode,.sticky,.dock,.transport,.rater,.qnote,.livenote,.worldnote,.filemenu,.pnote,.conn-hit,.mmcard,.mmscript,.mmchips,.mmhit,.xmodal,.spkpop';
+    var ui = '.vtl .hit,.debrief,.zoomctl,.caps,.anode,.sticky,.dock,.transport,.rater,.qnote,.livenote,.worldnote,.filemenu,.pnote,.conn-hit,.mmcard,.mmscript,.mmchips,.mmhit,.xmodal,.spkpop';
     var block = layerName === 'notes' ? ui : '.node,.fold,.ghost,' + ui;
     if (e.target.closest(block)) return;
     breakFollow();
