@@ -248,17 +248,18 @@
       for (var i = 0; i <= last; i++) { var w = mmStepWin(sess, i); if (w[0] < cl.endMs && w[1] > cl.startMs) { if (i0 < 0) i0 = i; i1 = i; } }
       if (i0 < 0) return;
       var a = yOf(mmCurAt(sess, i0)), b = yOf(mmCurAt(sess, i1)); if (a == null || b == null) return;
-      var y0 = Math.min(a, b) - 4, h = Math.max(8, Math.abs(b - a) + 8);
+      var y0 = Math.min(a, b) - 2, h = Math.max(4, Math.abs(b - a) + 4);
       p.push('<g class="hit" data-idx="' + i0 + '">' + tip('Recorded ' + fmtTime(sess.tbase + cl.startMs / 1000) + '–' + fmtTime(sess.tbase + cl.endMs / 1000)) +
-        '<rect class="clip" x="' + (x - 9) + '" y="' + y0 + '" width="4" height="' + h + '" rx="2"/></g>');
+        '<rect class="pad" x="' + (x - 10) + '" y="' + (y0 - 3) + '" width="8" height="' + (h + 6) + '"/>' +
+        '<rect class="clip" x="' + (x - 6.75) + '" y="' + y0 + '" width="1.5" height="' + h + '" rx=".75"/></g>');
     });
     (sess.ahead || []).forEach(function (n) {             // answered ahead: amber diamond, at the moment it happened
       if (n.idx > last) return;
       var y = yOf(n.at); if (y == null) return;
-      var cx = x - 20;                                    // left of the line; click = go to that question
+      var cx = x - 14, r = 2.4;                           // left of the line; click = go to that question
       p.push('<g class="hit" data-jump="' + n.id + '">' + tip('Answered ahead: ' + n.label + ' — click to go there') +
-        '<circle class="pad" cx="' + cx + '" cy="' + y + '" r="9"/>' +
-        '<path class="ahead" d="M' + cx + ' ' + (y - 5) + ' L' + (cx + 5) + ' ' + y + ' L' + cx + ' ' + (y + 5) + ' L' + (cx - 5) + ' ' + y + 'Z"/></g>');
+        '<circle class="pad" cx="' + cx + '" cy="' + y + '" r="7"/>' +
+        '<path class="ahead" d="M' + cx + ' ' + (y - r) + ' L' + (cx + r) + ' ' + y + ' L' + cx + ' ' + (y + r) + ' L' + (cx - r) + ' ' + y + 'Z"/></g>');
     });
     sess.marks.forEach(function (m) {                     // added questions: green dots
       if (!m.q || m.idx > last) return;

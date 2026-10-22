@@ -84,11 +84,12 @@
   .vtl .ln{stroke:#9DB0D6;stroke-width:1.2;stroke-linecap:round}
   .vtl .tk{stroke:#7F90B2;stroke-width:1.1;stroke-linecap:round}
   .vtl .hit{pointer-events:all;cursor:pointer}
-  .vtl .hit rect:not(.clip){fill:transparent}
+  .vtl .hit rect:not(.clip),.vtl .pad{fill:transparent}
   .vtl .hit:hover .tk{stroke:var(--accent);stroke-width:1.8}
   .vtl .clip{fill:var(--red)} .vtl .ahead{fill:var(--amber)} .vtl .add{fill:var(--green)}
   .vtl .pad{fill:transparent}
-  .vtl .hit:hover .ahead{fill:#B9801F;transform-box:fill-box;transform-origin:center;transform:scale(1.35)}
+  .vtl .hit:hover .ahead{fill:#B9801F;transform-box:fill-box;transform-origin:center;transform:scale(1.8)}
+  .vtl .hit:hover .clip{fill:#A9483A}
   .vtl .ahead{transition:transform .12s}
   .vtl .now{fill:var(--accent)}
   .vtl .nowring{fill:none;stroke:var(--accent);stroke-width:1.5;opacity:.5;transform-box:fill-box;transform-origin:center;animation:vtlpulse 1.8s ease-out infinite}
