@@ -188,7 +188,7 @@
   .anode .tx:focus{box-shadow:0 0 0 2px var(--accent-soft)}
 
   .sticky{position:absolute;width:186px;background:#FEFAEA;border:1px solid #EEE5C4;border-radius:4px;
-    padding:0 0 8px;box-shadow:0 12px 26px -16px rgba(21,24,27,.5);animation:slip .25s ease;cursor:grab}
+    padding:0 0 8px;animation:slip .25s ease;cursor:grab}
   .sticky.grabbing{cursor:grabbing}
   .sticky .top{display:flex;align-items:center;gap:6px;padding:5px 7px 3px;
     font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.07em;color:#A79A62}
@@ -332,7 +332,7 @@
   .conn-hit{fill:none;stroke:transparent;stroke-width:12;pointer-events:stroke;cursor:pointer}
   .pnote{position:absolute;width:var(--pw,184px);min-height:var(--ph,46px);z-index:6;box-sizing:border-box;
     background:#FEFAEA;border:1px solid #EBE3C2;border-radius:7px;padding:9px 11px 10px;
-    font-size:12px;line-height:1.45;color:#4A4526;box-shadow:0 12px 26px -16px rgba(21,24,27,.5);cursor:grab}
+    font-size:12px;line-height:1.45;color:#4A4526;cursor:grab}
   .pnote.grabbing{cursor:grabbing}
   .pnote.folded{border-left:3px solid #8B5CF6}
   .pnote.collapsed{width:14px;height:14px;min-height:0;padding:0;border:0;border-radius:50%;
