@@ -736,6 +736,18 @@
   .db-sum{font-size:12.5px;line-height:1.5}
   .db-meta{margin-top:7px;font-size:11px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px}
   .db-meta .dot{color:var(--faint)}
+  .db-chip{font-size:10.5px;line-height:1.6;padding:0 7px;border-radius:10px;border:1px solid var(--line);color:var(--muted)}
+  .db-chip.clip{color:var(--red);border-color:rgba(196,105,90,.4);background:rgba(196,105,90,.07)}
+  .db-chip.note{color:#7A5CC7;border-color:rgba(139,92,246,.35);background:rgba(139,92,246,.06)}
+  .db-chip.add{color:var(--green);border:1px dashed var(--green);background:rgba(78,154,107,.07)}
+  .db-meta.hubc{justify-content:center;margin-top:10px}
+  .db-nt.clip{color:var(--red);border-color:rgba(196,105,90,.4);background:rgba(196,105,90,.07)}
+  .db-nt.clip:hover{background:rgba(196,105,90,.15)}
+  .db-nt.clip[aria-expanded="true"]{background:var(--red);border-color:var(--red);color:#FFF}
+  .db-clips{margin:6px 0 0 11px;display:grid;gap:8px}
+  .db-q.added{border:1px dashed var(--green);border-radius:8px;padding:6px 8px;background:rgba(78,154,107,.05)}
+  .addtag{font-size:10px;color:var(--green);border:1px dashed var(--green);border-radius:8px;padding:0 5px}
+  :root[data-theme="dark"] .db-chip.note,:root[data-theme="dark"] .db-nt:not(.clip):not([aria-expanded="true"]){color:#B7A6F2}
   .rc{color:var(--red)}
   .debrief .empty{color:var(--faint);font-style:italic}
   .debrief .pending{color:var(--faint);font-style:italic}
@@ -1642,6 +1654,27 @@
     return '<button class="db-nt" data-dbnotes="' + key + '" aria-expanded="' + on + '" title="' + (on ? 'Hide' : 'Show') + ' notes">✎ ' + n +
       (what ? ' ' + (n === 1 ? 'note' : 'notes') + ' ' + what : '') + '</button>';
   }
+  function dbClipBtn(key, n) {
+    var k = 'c:' + key, on = !!dbNotesOpen[k];
+    return '<button class="db-nt clip" data-dbnotes="' + k + '" aria-expanded="' + on + '" title="' + (on ? 'Hide' : 'Show') + ' recorded ' + (n === 1 ? 'part' : 'parts') + '">● ' + n + '</button>';
+  }
+  function dbClipList(key, clips, sess) {
+    return '<div class="db-clips" data-notesfor="c:' + key + '">' + clips.map(function (x) { return dbClipHTML(x, sess); }).join('') + '</div>';
+  }
+  function dbClipHTML(x, sess) {
+    var c = x.c, key = 'c' + Math.round(c.startMs) + '-' + Math.round(c.endMs);
+    var when = fmtTime(sess.tbase + c.startMs / 1000) + '–' + fmtTime(sess.tbase + c.endMs / 1000);
+    var rx = c.reaction ? reactMeta(c.reaction) : null;
+    var h = '<div class="db-clip"><div class="ch"><span class="rc">●</span> Recorded ' + when +
+      (rx ? ' <span style="color:' + reactColor(c.reaction) + '" title="' + rx.l + '">' + rx.g + ' ' + rx.l + '</span>' : '') +
+      (x.inWin.length ? '<button class="sc" data-dbscript="' + key + '">' + (dbScript[key] ? 'Hide script' : 'Script') + '</button>' : '') + '</div>' +
+      (c.notes || []).map(function (nt) { return '<div class="cn">✎ ' + anonHTML(nt) + '</div>'; }).join('');
+    if (dbScript[key]) h += '<div class="db-script">' + x.inWin.map(function (i) {
+      var e = sess.steps[i], isInt = mmIsInterviewer(e);
+      return '<div class="sl' + (isInt ? ' int' : '') + '"><span class="sw">' + (isInt ? 'Interviewer' : 'Candidate') + '</span>' + anonHTML(e.t) + '</div>';
+    }).join('') + '</div>';
+    return h + '</div>';
+  }
   function dbNoteList(key, list) {
     return '<div class="db-notes" data-notesfor="' + key + '">' + list.map(function (nt) {
       return '<div class="db-note">' + anonHTML(nt.text) + (nt.when ? '<span class="when">' + nt.when + '</span>' : '') + '</div>';
@@ -1649,7 +1682,7 @@
   }
   function dbData(sess) {
     // notes hang on the question they were taken at (or linked to): d.qnotes[questionId] = [...]
-    var list = topics().map(function (t) { return { t: t, answers: [], clips: [], qnotes: {}, nNotes: 0 }; });
+    var list = topics().map(function (t) { return { t: t, answers: [], clips: [], qclips: {}, qnotes: {}, nNotes: 0 }; });
     var byId = {}, loose = [];
     list.forEach(function (d) { byId[d.t.id] = d; });
     function dOf(qid) { var q = INDEX[qid], t = q && topicOf(q); return t ? byId[t.id] : null; }
@@ -1675,8 +1708,8 @@
             if (!first && al.length) first = al[0].id;
           }
         }
-        var d = dOf(first || mmCurAt(sess, inWin.length ? inWin[inWin.length - 1] : 0));
-        if (d) d.clips.push({ c: c, inWin: inWin });
+        var qid = first || mmCurAt(sess, inWin.length ? inWin[inWin.length - 1] : 0), d = dOf(qid);
+        if (d) { var x = { c: c, inWin: inWin }; d.clips.push(x); (d.qclips[qid] = d.qclips[qid] || []).push(x); }
       });
       sess.marks.forEach(function (m) {
         if (m.q) return;                    // added questions are real questions in the tree already
@@ -1694,6 +1727,15 @@
     return { topics: list, loose: loose };
   }
   function dbState(sess) { return (sess && sess.state) || state; }   // coverage survives stopping
+  // count chips in the colours the rest of the app uses: clips red, notes purple, added questions green dashed
+  function dbChips(nAns, nClips, nNotes, nAdded) {
+    var c = [];
+    if (nAns) c.push('<span class="db-chip">' + nAns + (nAns === 1 ? ' answer' : ' answers') + '</span>');
+    if (nClips) c.push('<span class="db-chip clip">● ' + nClips + ' recorded</span>');
+    if (nNotes) c.push('<span class="db-chip note">✎ ' + nNotes + (nNotes === 1 ? ' note' : ' notes') + '</span>');
+    if (nAdded) c.push('<span class="db-chip add">+ ' + nAdded + ' added</span>');
+    return c.join('');
+  }
   function dbStatus(t, sess) {
     var g = 0, a = 0, st = dbState(sess);
     t.qs.forEach(function (q) { if (st[q.id] === 'green') g++; else if (st[q.id] === 'amber') a++; });
@@ -1711,10 +1753,8 @@
         : v === null ? '<span class="empty">Summary unavailable. Open the topic to read the answers.</span>'
         : (SUM_LAST[t.id] ? esc(SUM_LAST[t.id]) + ' <span class="pending">updating…</span>' : '<span class="pending">Summarizing…</span>');
     }
-    var nNotes = d.nNotes, meta = [];
-    if (steps.length) meta.push(steps.length + (steps.length === 1 ? ' answer' : ' answers'));
-    if (d.clips.length) meta.push('<span class="rc">●</span> ' + d.clips.length + (d.clips.length === 1 ? ' clip' : ' clips'));
-    if (nNotes) meta.push('✎ ' + nNotes + (nNotes === 1 ? ' note' : ' notes'));
+    var nNotes = d.nNotes, nAdded = subtree(t).filter(function (n) { return n.added; }).length;
+    var meta = dbChips(steps.length, d.clips.length, nNotes, nAdded);
     var h = '<div class="db-card' + (open ? ' open' : '') + (steps.length ? '' : ' quiet') + '" data-topic="' + t.id + '">' +
       '<button class="db-hd" data-dbtoggle="' + t.id + '" aria-expanded="' + open + '">' +
       '<span class="num">T' + t.n + '</span><span class="tt">' + esc(t.text) + '</span>' +
@@ -1722,7 +1762,7 @@
       '<div class="db-bar"><i style="width:' + (s.n ? s.g / s.n * 100 : 0) + '%;background:var(--green)"></i>' +
       '<i style="width:' + (s.n ? s.a / s.n * 100 : 0) + '%;background:var(--amber)"></i></div>' +
       '<div class="db-sum">' + sum + '</div>' +
-      (meta.length ? '<div class="db-meta">' + meta.join('<span class="dot">·</span>') + '</div>' : '');
+      (meta ? '<div class="db-meta">' + meta + '</div>' : '');
     if (open) h += '<div class="db-body">' + dbBody(d, sess) + '</div>';
     return h + '</div>';
   }
@@ -1737,11 +1777,12 @@
     var inTopic = {};
     qsAll.forEach(function (q) { inTopic[q.id] = 1; });
     qsAll.forEach(function (q) {
-      var as = byQ[q.id], ns = d.qnotes[q.id];
-      if (!as && !ns) { if (q.kind !== 'opener' && q.depth === 1 && dbState(sess)[q.id] !== 'green') open.push(q); return; }
-      h += '<div class="db-q"><div class="db-qh"><button class="ql" data-goto="' + q.id + '" title="Show on the tree"><b>' +
-        esc(mmQLabel(q)) + '</b> ' + esc(q.text) + '</button>' + (ns ? dbNoteBtn(q.id, ns.length) : '') + '</div>';
-      var tail = ns && dbNotesOpen[q.id] ? dbNoteList(q.id, ns) : '';
+      var as = byQ[q.id], ns = d.qnotes[q.id], cs = d.qclips[q.id];
+      if (!as && !ns && !cs && !q.added) { if (q.kind !== 'opener' && q.depth === 1 && dbState(sess)[q.id] !== 'green') open.push(q); return; }
+      h += '<div class="db-q' + (q.added ? ' added' : '') + '"><div class="db-qh"><button class="ql" data-goto="' + q.id + '" title="Show on the tree"><b>' +
+        esc(mmQLabel(q)) + '</b> ' + (q.added ? '<span class="addtag">Added</span> ' : '') + esc(q.text) + '</button>' +
+        (cs ? dbClipBtn(q.id, cs.length) : '') + (ns ? dbNoteBtn(q.id, ns.length) : '') + '</div>';
+      var tail = (cs && dbNotesOpen['c:' + q.id] ? dbClipList(q.id, cs, sess) : '') + (ns && dbNotesOpen[q.id] ? dbNoteList(q.id, ns) : '');
       if (!as) { h += '<div class="seen">Not answered yet</div>' + tail + '</div>'; return; }
       var fresh = as.filter(function (a) { return !shown[a.i]; });
       if (!fresh.length) { h += '<div class="seen">Answered in a reply above</div>' + tail + '</div>'; return; }
@@ -1756,31 +1797,20 @@
         (fresh.length > 2 ? '<div class="more">+' + (fresh.length - 2) + ' more on the tree</div>' : '') + tail + '</div>';
     });
     // notes taken on the topic itself rather than one of its questions
-    var other = [];
+    var other = [], otherC = [];
     Object.keys(d.qnotes).forEach(function (id) { if (!inTopic[id]) other = other.concat(d.qnotes[id]); });
-    if (other.length) {
+    Object.keys(d.qclips).forEach(function (id) { if (!inTopic[id]) otherC = otherC.concat(d.qclips[id]); });
+    if (other.length || otherC.length) {
       var k = 'T' + t.id;
-      h += '<div class="db-q"><div class="db-qh"><span class="ql">On the topic as a whole</span>' + dbNoteBtn(k, other.length) + '</div>' +
-        (dbNotesOpen[k] ? dbNoteList(k, other) : '') + '</div>';
+      h += '<div class="db-q"><div class="db-qh"><span class="ql">On the topic as a whole</span>' +
+        (otherC.length ? dbClipBtn(k, otherC.length) : '') + (other.length ? dbNoteBtn(k, other.length) : '') + '</div>' +
+        (otherC.length && dbNotesOpen['c:' + k] ? dbClipList(k, otherC, sess) : '') +
+        (other.length && dbNotesOpen[k] ? dbNoteList(k, other) : '') + '</div>';
     }
     if (!h) h = '<div class="empty">No answers in this topic yet.</div>';
     if (open.length) h += '<div class="db-open"><span>Still open</span>' + open.map(function (q) {
       return '<button data-goto="' + q.id + '" title="' + esc(q.text) + '">' + esc(q.label) + '</button>';
     }).join('') + '</div>';
-    d.clips.forEach(function (x) {
-      var c = x.c, key = 'c' + Math.round(c.startMs) + '-' + Math.round(c.endMs);
-      var when = fmtTime(sess.tbase + c.startMs / 1000) + '–' + fmtTime(sess.tbase + c.endMs / 1000);
-      var rx = c.reaction ? reactMeta(c.reaction) : null;
-      h += '<div class="db-clip"><div class="ch"><span class="rc">●</span> Clip ' + when +
-        (rx ? ' <span style="color:' + reactColor(c.reaction) + '" title="' + rx.l + '">' + rx.g + ' ' + rx.l + '</span>' : '') +
-        (x.inWin.length ? '<button class="sc" data-dbscript="' + key + '">' + (dbScript[key] ? 'Hide script' : 'Script') + '</button>' : '') + '</div>' +
-        (c.notes || []).map(function (nt) { return '<div class="cn">✎ ' + anonHTML(nt) + '</div>'; }).join('');
-      if (dbScript[key]) h += '<div class="db-script">' + x.inWin.map(function (i) {
-        var e = sess.steps[i], isInt = mmIsInterviewer(e);
-        return '<div class="sl' + (isInt ? ' int' : '') + '"><span class="sw">' + (isInt ? 'Interviewer' : 'Candidate') + '</span>' + anonHTML(e.t) + '</div>';
-      }).join('') + '</div>';
-      h += '</div>';
-    });
     return h;
   }
   function renderMindmapCards() {
@@ -1797,11 +1827,12 @@
     var mins = sess && sess.lastIdx >= 0 ? Math.round((sess.cum[sess.lastIdx] || 0) / 60000) : 0;
     var hubMeta = [];
     if (sess && sess.lastIdx >= 0) hubMeta.push(mins + ' min');
-    if (nClips) hubMeta.push(nClips + (nClips === 1 ? ' clip' : ' clips'));
-    if (nNotes) hubMeta.push(nNotes + (nNotes === 1 ? ' note' : ' notes'));
+    var nAddedAll = NODES.filter(function (n) { return n.added; }).length;
+    var hubChips = dbChips(0, nClips, nNotes, nAddedAll);
     var hub = '<div class="db-hub" data-hub="1"><div class="hl">Interview</div><div class="hn">' + esc($('fileName').textContent || '') + '</div>' +
       '<div class="pct">' + (all ? Math.round(sc / all * 100) : 0) + '%</div><div class="hs">covered</div>' +
       (hubMeta.length ? '<div class="hm">' + hubMeta.join(' · ') + '</div>' : '') +
+      (hubChips ? '<div class="db-meta hubc">' + hubChips + '</div>' : '') +
       (!sess ? '<div class="hm">Start an interview or open a saved session to fill this in.</div>' : '') +
       (data.loose.length ? '<div class="db-hubnotes">' + dbNoteBtn('loose', data.loose.length, 'not tied to a question') + '</div>' +
         (dbNotesOpen.loose ? dbNoteList('loose', data.loose) : '') : '') +
