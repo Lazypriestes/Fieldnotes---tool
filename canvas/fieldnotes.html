@@ -696,11 +696,12 @@
 
   /* ---------- dark mode ---------- */
   /* mind map = interview debrief: a hub and one card per topic, over the (hidden) tree */
-  .debrief{position:absolute;inset:0;z-index:4;display:none;overflow:auto;cursor:default;
+  .debrief{position:absolute;inset:0;z-index:4;display:none;overflow:hidden;cursor:grab;touch-action:none;
     padding:8px 28px 130px 92px;background:var(--surface);border-top:128px solid var(--surface)}   /* scroll area starts below the tree menu */
   .app.layer-mindmap .debrief{display:block}
   .app.layer-mindmap .world,.app.layer-mindmap .zoomctl{visibility:hidden}
-  .db-wrap{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 210px minmax(0,1fr);
+  .debrief.panning{cursor:grabbing}
+  .db-wrap{transform-origin:0 0;will-change:transform;position:relative;display:grid;grid-template-columns:minmax(0,1fr) 210px minmax(0,1fr);
     gap:0 64px;max-width:1240px;margin:0 auto;align-items:center}
   .db-wrap.wl{grid-template-columns:minmax(0,1.8fr) 190px minmax(0,1fr)}   /* the open topic's side gets room */
   .db-wrap.wr{grid-template-columns:minmax(0,1fr) 190px minmax(0,1.8fr)}
@@ -720,12 +721,8 @@
   .db-hub .hn2{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:12px 0 4px;text-align:left}
   .db-hub .hx{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-top:12px}
   .db-card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 14px 12px;cursor:pointer;
-    transition:border-color .15s,box-shadow .15s;touch-action:none}
-  .db-card.moved,.db-hub.moved{z-index:2}
-  .db-card.dragging,.db-hub.dragging{z-index:6;cursor:grabbing;box-shadow:0 18px 40px -18px rgba(21,24,27,.45)}
-  .db-hub{cursor:grab;touch-action:none;position:relative}
-  .db-reset{margin-top:10px;font-size:10.5px;color:var(--accent);border:1px solid var(--line);border-radius:10px;padding:1px 9px}
-  .db-reset:hover{border-color:var(--accent)}
+    transition:border-color .15s,box-shadow .15s}
+  .db-hub{cursor:default}
   .db-card:hover{border-color:var(--muted)}
   .db-card.open{cursor:default;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
   .db-card.quiet .tt{color:var(--muted)}
@@ -1659,45 +1656,55 @@
   }
 
   var dbOpen = null, dbScript = {}, dbEl = null, dbFlip = null, dbNotesOpen = {};
-  // cards (and the hub) can be dragged anywhere; offsets are remembered per tree
-  var DBPOS = {};
-  try { DBPOS = JSON.parse(localStorage.getItem('fn.dbpos') || '{}') || {}; } catch (_e) {}
-  function dbPosKey(id) { return ($('fileName').textContent || '') + '|' + id; }
-  function dbApplyPos() {
-    dbEl.querySelectorAll('.db-card,.db-hub').forEach(function (el) {
-      var o = DBPOS[dbPosKey(el.dataset.topic || 'hub')];
-      el.style.translate = o ? o.x + 'px ' + o.y + 'px' : '';
-      el.classList.toggle('moved', !!o);
-    });
+  // free roam: drag empty space (or scroll) to pan, ⌥/⌘-scroll to zoom, F brings it back
+  var DBV = { x: 0, y: 0, z: 1 }, dbPan = null, dbJustPanned = 0;
+  function dbApplyView() {
+    var w = dbEl && dbEl.querySelector('.db-wrap'); if (!w) return;
+    w.style.transform = 'translate(' + DBV.x + 'px,' + DBV.y + 'px) scale(' + DBV.z + ')';
   }
-  function dbSavePos() { try { localStorage.setItem('fn.dbpos', JSON.stringify(DBPOS)); } catch (_e) {} }
-  var dbDrag = null, dbJustDragged = 0;
+  var dbViewAnim = null;
+  function dbAnimateView(to) {
+    if (dbViewAnim) { dbViewAnim.stop(); dbViewAnim = null; }      // a new glide replaces the old one
+    if (!MO || REDUCED) { DBV = to; dbApplyView(); return; }
+    var from = { x: DBV.x, y: DBV.y, z: DBV.z };
+    dbViewAnim = MO.animate(0, 1, { type: 'spring', visualDuration: 0.4, bounce: 0.1, onUpdate: function (k) {
+      DBV = { x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k, z: from.z + (to.z - from.z) * k };
+      dbApplyView();
+    } });
+  }
+  function dbRecenter() { dbAnimateView({ x: 0, y: 0, z: 1 }); }
   document.addEventListener('pointerdown', function (e) {
-    if (e.button !== 0 || !e.target.closest) return;
-    var el = e.target.closest('.debrief .db-card, .debrief .db-hub');
-    if (!el || e.target.closest('.db-quote,.db-script,.db-note,.db-recnote,.db-sum')) return;   // text there stays selectable
-    var k = dbPosKey(el.dataset.topic || 'hub'), o = DBPOS[k] || { x: 0, y: 0 };
-    dbDrag = { el: el, k: k, sx: e.clientX, sy: e.clientY, ox: o.x, oy: o.y, moved: false, id: e.pointerId };
+    if (e.button !== 0 || !e.target.closest || !e.target.closest('.debrief')) return;
+    if (e.target.closest('.db-card,.db-hub,button')) return;          // cards keep their clicks
+    if (dbViewAnim) { dbViewAnim.stop(); dbViewAnim = null; }
+    dbPan = { sx: e.clientX, sy: e.clientY, x: DBV.x, y: DBV.y, moved: false };
+    dbEl.classList.add('panning');
   });
   document.addEventListener('pointermove', function (e) {
-    if (!dbDrag) return;
-    var dx = e.clientX - dbDrag.sx, dy = e.clientY - dbDrag.sy;
-    if (!dbDrag.moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
-    if (!dbDrag.moved) { dbDrag.moved = true; dbDrag.el.classList.add('dragging'); getSelection().removeAllRanges(); }
-    var x = dbDrag.ox + dx, y = dbDrag.oy + dy;
-    dbDrag.el.style.translate = x + 'px ' + y + 'px';
-    DBPOS[dbDrag.k] = { x: x, y: y };
-    dbLines();
+    if (!dbPan) return;
+    var dx = e.clientX - dbPan.sx, dy = e.clientY - dbPan.sy;
+    if (!dbPan.moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+    dbPan.moved = true;
+    DBV.x = dbPan.x + dx; DBV.y = dbPan.y + dy; dbApplyView();
   });
   document.addEventListener('pointerup', function () {
-    if (!dbDrag) return;
-    if (dbDrag.moved) {
-      dbDrag.el.classList.remove('dragging'); dbDrag.el.classList.add('moved');
-      dbJustDragged = Date.now(); dbSavePos();
-      if (!dbEl.querySelector('[data-dbreset]')) renderMindmapCards();   // show "Reset layout"
-    }
-    dbDrag = null;
+    if (!dbPan) return;
+    if (dbPan.moved) dbJustPanned = Date.now();
+    dbPan = null; dbEl.classList.remove('panning');
   });
+  function dbWheel(e) {
+    e.preventDefault();
+    if (dbViewAnim) { dbViewAnim.stop(); dbViewAnim = null; }
+    if (e.ctrlKey || e.metaKey || e.altKey) {          // zoom around the cursor
+      var w = dbEl.querySelector('.db-wrap'), r = dbEl.getBoundingClientRect();
+      var nz = clamp(DBV.z * Math.pow(0.995, e.deltaY), 0.35, 1.8);
+      var ox = w.offsetLeft, oy = w.offsetTop, cx = e.clientX - r.left - dbEl.clientLeft, cy = e.clientY - r.top - dbEl.clientTop;
+      DBV.x = cx - ox - (cx - ox - DBV.x) * (nz / DBV.z);
+      DBV.y = cy - oy - (cy - oy - DBV.y) * (nz / DBV.z);
+      DBV.z = nz;
+    } else { DBV.x -= e.deltaX; DBV.y -= e.deltaY; }
+    dbApplyView();
+  }
   // a small "✎ 2" pill on a question: its notes stay folded away until you open them
   function dbNoteBtn(key, n, what) {
     var on = !!dbNotesOpen[key];
@@ -1898,6 +1905,7 @@
       dbEl = document.createElement('div'); dbEl.className = 'debrief'; dbEl.id = 'debrief';
       viewport.appendChild(dbEl);
       if (window.ResizeObserver) new ResizeObserver(function () { if (layerName === 'mindmap') dbLayout(); }).observe(dbEl);
+      dbEl.addEventListener('wheel', dbWheel, { passive: false });
     }
     if (layerName !== 'mindmap') return;
     var sess = mmSession(); mmSig = mmSignature(sess);
@@ -1916,8 +1924,7 @@
       (!sess ? '<div class="hm">Start an interview or open a saved session to fill this in.</div>' : '') +
       (data.loose.length ? '<div class="db-hubnotes">' + dbNoteBtn('loose', data.loose.length, 'not tied to a question') + '</div>' +
         (dbNotesOpen.loose ? dbNoteList('loose', data.loose) : '') : '') +
-      '<div class="hx">Names anonymized</div>' +
-      (Object.keys(DBPOS).some(function (k) { return k.indexOf(dbPosKey('')) === 0; }) ? '<button class="db-reset" data-dbreset="1">Reset layout</button>' : '') + '</div>';
+      '<div class="hx">Names anonymized</div></div>';
     var cards = data.topics.map(function (d) { return dbCard(d, sess); });
     var half = Math.ceil(cards.length / 2);
     var scroll = dbEl.scrollTop;
@@ -1929,7 +1936,7 @@
       '<div class="db-mid">' + hub + '</div>' +
       '<div class="db-col r">' + cards.slice(half).join('') + '</div></div>';
     dbEl.scrollTop = scroll;
-    dbApplyPos();
+    dbApplyView();
     dbLayout();
     if (dbFlip) { var f = dbFlip; dbFlip = null; dbPlayFlip(f); }
   }
@@ -1944,16 +1951,16 @@
     var wrap = dbEl && dbEl.querySelector('.db-wrap'), svgL = wrap && wrap.querySelector('.db-lines');
     if (!svgL) return;
     if (wrap.classList.contains('narrow')) { svgL.innerHTML = ''; return; }
-    var W0 = wrap.getBoundingClientRect(), hubR = wrap.querySelector('.db-hub').getBoundingClientRect();
-    var hy = hubR.top + hubR.height / 2 - W0.top, parts = [];
+    var W0 = wrap.getBoundingClientRect(), hubR = wrap.querySelector('.db-hub').getBoundingClientRect(), z = DBV.z;
+    var hy = (hubR.top + hubR.height / 2 - W0.top) / z, parts = [];
     wrap.querySelectorAll('.db-card').forEach(function (c) {
       var r = c.getBoundingClientRect(), left = c.closest('.db-col.l');
-      var x1 = (left ? hubR.left : hubR.right) - W0.left, y2 = r.top - W0.top + 22;
-      var x2 = (left ? r.right : r.left) - W0.left, dx = (x2 - x1) / 2;
+      var x1 = ((left ? hubR.left : hubR.right) - W0.left) / z, y2 = (r.top - W0.top) / z + 22;
+      var x2 = ((left ? r.right : r.left) - W0.left) / z, dx = (x2 - x1) / 2;
       parts.push('<path class="' + (c.classList.contains('open') ? 'on' : c.classList.contains('quiet') ? 'quiet' : '') + '" d="M' + x1 + ' ' + hy +
         ' C' + (x1 + dx) + ' ' + hy + ',' + (x2 - dx) + ' ' + y2 + ',' + x2 + ' ' + y2 + '"/>');
     });
-    svgL.setAttribute('width', W0.width); svgL.setAttribute('height', W0.height);
+    svgL.setAttribute('width', W0.width / z); svgL.setAttribute('height', W0.height / z);
     svgL.innerHTML = parts.join('');
   }
   // opening or closing a topic: cards glide to their new places (FLIP), the opened body unfolds
@@ -1967,7 +1974,7 @@
     dbEl.querySelectorAll('.db-card,.db-hub').forEach(function (el) {
       var b = before[el.dataset.topic || 'hub'], a = el.getBoundingClientRect();
       if (!b) return;
-      var dx = b.left - a.left, dy = b.top - a.top;
+      var dx = (b.left - a.left) / DBV.z, dy = (b.top - a.top) / DBV.z;
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1)
         MO.animate(el, { x: [dx, 0], y: [dy, 0] }, SPRING).then(function () { el.style.transform = ''; });
     });
@@ -1982,8 +1989,10 @@
     renderMindmapCards();
     var card = dbOpen && dbEl.querySelector('.db-card[data-topic="' + dbOpen + '"]');
     if (card) setTimeout(function () {
-      var r = card.getBoundingClientRect(), v = dbEl.getBoundingClientRect();
-      if (r.bottom > v.bottom - 110 || r.top < v.top + 60) card.scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth', block: 'nearest' });
+      var r = card.getBoundingClientRect(), v = dbEl.getBoundingClientRect(), bottom = v.bottom - 120, dy = 0;
+      if (r.top < v.top + 8) dy = v.top + 8 - r.top;
+      else if (r.bottom > bottom) dy = Math.max(bottom - r.bottom, v.top + 8 - r.top);   // tall card: its top stays in view
+      if (dy) dbAnimateView({ x: DBV.x, y: DBV.y + dy, z: DBV.z });
     }, 380);
   }
   function mmGoto(id) {
@@ -1995,11 +2004,7 @@
   }
   document.addEventListener('click', function (e) {
     if (!e.target.closest || !e.target.closest('.debrief')) return;
-    if (Date.now() - dbJustDragged < 250) { e.stopPropagation(); return; }   // the end of a drag isn't a click
-    if (e.target.closest('[data-dbreset]')) {
-      Object.keys(DBPOS).forEach(function (k) { if (k.indexOf(dbPosKey('')) === 0) delete DBPOS[k]; });
-      dbSavePos(); dbFlip = dbRects(); renderMindmapCards(); return;
-    }
+    if (Date.now() - dbJustPanned < 250) return;      // the end of a pan isn't a click
     var g = e.target.closest('[data-goto]');
     if (g) { mmGoto(g.getAttribute('data-goto')); return; }
     var nb = e.target.closest('[data-dbnotes]');
@@ -2262,8 +2267,10 @@
     });
     // drag the note body to move it (or, when collapsed to a dot, click to expand)
     el.addEventListener('pointerdown', function (ev) {
-      if (el.classList.contains('collapsed')) {
-        ev.stopPropagation(); note.expanded = true; updateCollapse(note, true); drawConns();
+      if (el.classList.contains('collapsed')) {          // clicking the dot opens the note for good;
+        ev.stopPropagation();                             // the eye folds it again
+        note.folded = false; note.expanded = false; paintEye(note);
+        updateCollapse(note, true); drawConns(); scheduleFileSave();
         return;
       }
       if (ev.target.closest('.pdot,.pn-corner,.pn-del')) return;
@@ -2855,7 +2862,7 @@
     }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
     if (e.key === '\\') { e.preventDefault(); setPanel(!panelOpen); return; }
-    if (e.key.toLowerCase() === 'f' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); setFollow(!follow); return; }
+    if (e.key.toLowerCase() === 'f' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); layerName === 'mindmap' ? dbRecenter() : setFollow(!follow); return; }
     if (e.key.toLowerCase() === 'e' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); setEdit(!editing); return; }
     if (e.key.toLowerCase() === 's' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); cycleScene(); return; }
     if (e.key.toLowerCase() === 'n' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); live ? addLiveNote() : addPageNoteCentered(); return; }
@@ -2961,7 +2968,7 @@
     var d = $('dock');
     if (d) d.querySelectorAll('[data-scene]').forEach(function (b) { b.classList.toggle('on', b.dataset.scene === name); });
     hint.textContent = name === 'notes' ? 'DOUBLE-CLICK TO DROP A STICKY'
-      : name === 'mindmap' ? 'MIND MAP · WHAT WE LEARNED, PER TOPIC · CLICK A TOPIC · S CYCLES'
+      : name === 'mindmap' ? 'MIND MAP · CLICK A TOPIC · DRAG TO MOVE AROUND · ⌥SCROLL TO ZOOM · F RECENTERS'
       : 'DRAG TO PAN · ⌥SCROLL TO ZOOM · E TO EDIT';
     X[2] = name === 'notes' ? X_NOTES : X_TREE;
     NODES.forEach(function (n) { if (n.depth === 2 && n.el) n.el.style.left = X[2] + 'px'; });
