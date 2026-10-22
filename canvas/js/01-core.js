@@ -18,6 +18,10 @@
   editBtn = editBtn || _stub; followBtn = followBtn || _stub;
   hint = hint || _stub; countEl = countEl || _stub;
   legendLive = legendLive || _stub; posLabel = posLabel || _stub;   // the bottom legend bar is gone too
+  // The bottom timeline (time scrubber) is switched off: the left timeline shows the interview
+  // by question instead. Set this to true to bring the scrubber back (git tag: with-bottom-timeline).
+  var SHOW_SCRUBBER = false;
+  app.classList.toggle('no-scrubber', !SHOW_SCRUBBER);
   // the recording menu rides just above the captions card, whatever its height
   if (window.ResizeObserver) new ResizeObserver(function () {
     app.style.setProperty('--capsH', (caps.offsetHeight + 12) + 'px');
@@ -45,7 +49,9 @@
   function mk(o) {
     o.children = o.children || [];
     if (o.collapsed === undefined) o.collapsed = false;
-    o.id = o.id || ('n' + (++seq));
+    // ids must never repeat: a counter restarts at every page load and used to hand out an id a
+    // saved question already had. Unique per moment instead; a duplicate in a saved tree is renamed.
+    if (!o.id || INDEX[o.id]) o.id = 'n' + Date.now().toString(36) + (++seq).toString(36) + Math.floor(Math.random() * 1296).toString(36);
     NODES.push(o); INDEX[o.id] = o;
     return o;
   }

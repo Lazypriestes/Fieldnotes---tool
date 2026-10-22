@@ -483,6 +483,7 @@
     box-shadow:0 16px 38px -22px rgba(21,24,27,.45);
     display:flex;flex-direction:column;gap:4px}
   .caps[hidden]{display:none}
+  .app.no-scrubber .caps .tl{display:none}   /* bottom timeline switched off (SHOW_SCRUBBER in 01-core.js) */
   .line{display:flex;gap:9px;align-items:baseline;line-height:1.4;animation:slip .25s ease}
   .line .who{flex:none;width:74px;text-align:right;font-family:ui-monospace,Menlo,monospace;
     font-size:9.5px;letter-spacing:.08em;color:var(--faint);padding-top:2px}

@@ -138,10 +138,20 @@
     if (animate) NODES.forEach(function (n) {           // where things are NOW (mid-animation counts)
       if (n.el && n.el.style.display !== 'none' && n.x != null) prev[n.id] = { x: n.x, y: n.y };
     });
+    // the "+ add" placeholders of edit mode move with the boxes (and fade in when edit mode starts)
+    function ghostEls() {
+      var g = NODES.filter(function (n) { return n.ghostEl; }).map(function (n) { return { el: n.ghostEl, g: n.ghost }; });
+      g.push({ el: rootGhost, g: ROOT.ghost }); return g;
+    }
+    var gPrev = {};
+    if (animate && editing && LAYOUT_ANIM.wasEditing) ghostEls().forEach(function (o) {   // only if they were showing
+      if (o.el.style.display !== 'none' && o.el.offsetParent) gPrev[o.el.dataset.ghost] = parseFloat(o.el.style.top);
+    });
     var anchor = LAYOUT_ANIM.anchor, aY0 = anchor && prev[anchor.id] ? prev[anchor.id].y : null, camY0 = cam.y;
     LAYOUT_ANIM.anchor = null;
     stopLayoutAnim();
     layoutNow();                                         // final positions and visibility
+    LAYOUT_ANIM.wasEditing = editing;
     if (!animate) return;
 
     var items = [], extra = {};
@@ -151,18 +161,34 @@
       }
       return null;
     }
+    // a box added in edit mode grows from where you added it: the "+ add" slot it replaces,
+    // or just below the box before it, rather than flying out of its parent
+    function bornAt(n) {
+      if (!editing || !n.parent) return null;
+      var sib = n.parent.children, i = sib.indexOf(n);
+      if (i === sib.length - 1 && gPrev[n.parent.id] != null) return { x: X[n.depth], y: gPrev[n.parent.id] };
+      for (var j = i - 1; j >= 0; j--) if (prev[sib[j].id]) return { x: prev[sib[j].id].x, y: prev[sib[j].id].y + sib[j].h / 2 };
+      return null;
+    }
     NODES.forEach(function (n) {
       var vis = !isHidden(n), was = !!prev[n.id];
       if (!vis && !was) return;
       var to = vis ? { x: n.x, y: n.y } : (visAncestor(n, false) || prev[n.id]);
-      var from = was ? prev[n.id] : (visAncestor(n, true) || to);
+      var from = was ? prev[n.id] : (bornAt(n) || visAncestor(n, true) || to);
       if (vis && was && from.x === to.x && from.y === to.y) return;
       if (!vis) extra[n.id] = 1;
       items.push({ n: n, from: from, to: to, vis: vis, was: was });
     });
+    var ghosts = [];
+    if (editing) ghostEls().forEach(function (o) {
+      if (o.el.style.display === 'none') return;
+      var to = parseFloat(o.el.style.top), from = gPrev[o.el.dataset.ghost];
+      if (from === to) return;
+      ghosts.push({ el: o.el, from: from, to: to });
+    });
     var camTo = camY0;
     if (anchor && aY0 != null && !isHidden(anchor)) camTo = camY0 - (anchor.y - aY0) * cam.z;
-    if (!items.length && camTo === camY0) return;
+    if (!items.length && !ghosts.length && camTo === camY0) return;
 
     // e = how far along (a spring may overshoot 1 a touch), k = the same clamped to 0..1 for fades
     function step(e, k) {
@@ -179,6 +205,10 @@
           if (op != null) { n.fold.style.display = ''; n.fold.style.opacity = op; LAYOUT_ANIM.touched.push(n.fold); }
         }
       });
+      ghosts.forEach(function (g) {                      // placeholders wait out of sight while boxes move,
+        g.el.style.transition = 'none'; g.el.style.opacity = 0;    // gone at once,
+        LAYOUT_ANIM.touched.push(g.el);                   // then fade in at their new spot (CSS)
+      });
       drawEdges(extra, k);
       if (annoList.length) layoutAnnos();
       drawConns(); drawVTL();
@@ -191,9 +221,10 @@
         if (!it.vis) { it.n.el.style.display = 'none'; if (it.n.fold) it.n.fold.style.display = 'none'; }
       });
       if (camTo !== camY0) { cam.y = camTo; apply(false); }
-      LAYOUT_ANIM.touched.forEach(function (el) { el.style.opacity = ''; }); LAYOUT_ANIM.touched = [];
+      LAYOUT_ANIM.touched.forEach(function (el) { el.style.transition = ''; el.style.opacity = ''; }); LAYOUT_ANIM.touched = [];
       drawEdges(); layoutAnnos(); drawConns();
     }
+    step(0, 0);                                          // paint the starting frame now: no flash of the end state
     if (MO) {                                            // a soft spring: branches settle, not stop dead
       LAYOUT_ANIM.ctl = MO.animate(0, 1, { type: 'spring', visualDuration: 0.32, bounce: 0.12,
         onUpdate: function (v) { step(v, Math.max(0, Math.min(1, v))); }, onComplete: settle });

@@ -210,8 +210,10 @@
       vtl.addEventListener('click', function (e) {
         var j = e.target.closest('[data-jump]');
         if (j) { jumpTo(j.getAttribute('data-jump')); return; }
-        var g = e.target.closest('[data-idx]'); if (!g || !live) return;
-        seekIdx(+g.getAttribute('data-idx'), false);
+        var g = e.target.closest('[data-idx]'); if (!g) return;
+        var i = +g.getAttribute('data-idx'), s = mmSession();
+        if (SHOW_SCRUBBER && live) { seekIdx(i, false); return; }      // with the scrubber: rewind to that moment
+        var q = s && ((s.steps[i] && s.steps[i].cur) || mmCurAt(s, i)); if (q) jumpTo(q);   // otherwise: go to that question
       });
     }
     if (VTL_X === undefined) return;
@@ -422,6 +424,12 @@
   function positionRater() {
     if (!rateTarget) return;
     var track = $('tlTrack'); if (!track) return;
+    if (!SHOW_SCRUBBER) {                                 // no scrubber to point at: centre it above the captions
+      var cr = caps.getBoundingClientRect(), vb = viewport.getBoundingClientRect();
+      $('rater').style.left = (cr.left - vb.left + cr.width / 2) + 'px';
+      $('rater').style.bottom = (vb.bottom - cr.top + 12) + 'px';
+      return;
+    }
     var span = spanNow();
     var mid = ((clamp(rateTarget.startMs, 0, recNow()) + clamp(rateTarget.endMs, 0, recNow())) / 2 / span) * LIVE_X;
     var tr = track.getBoundingClientRect(), vp = viewport.getBoundingClientRect();
