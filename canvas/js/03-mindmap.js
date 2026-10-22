@@ -484,13 +484,7 @@
       if (dy) dbAnimateView({ x: DBV.x, y: DBV.y + dy, z: DBV.z });
     }, 380);
   }
-  function mmGoto(id) {
-    var n = INDEX[id]; if (!n) return;
-    if (layerName === 'mindmap') setLayer('tree');
-    select(id, true);                       // reveals collapsed parents, selects, glides the camera
-    n.el.classList.remove('mmflash'); void n.el.offsetWidth; n.el.classList.add('mmflash');
-    setTimeout(function () { n.el.classList.remove('mmflash'); }, 1700);
-  }
+  function mmGoto(id) { jumpTo(id); }
   document.addEventListener('click', function (e) {
     if (!e.target.closest || !e.target.closest('.debrief')) return;
     if (Date.now() - dbJustPanned < 250) return;      // the end of a pan isn't a click

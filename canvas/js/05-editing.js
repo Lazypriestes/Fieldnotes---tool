@@ -300,6 +300,16 @@
   world.addEventListener('pointercancel', endDrag);
 
   /* ---------- selection & inspector ---------- */
+  // go to a question from elsewhere (an "answered ahead" pop-up, the side panel, the mind map):
+  // pause follow so the view stays there, open its branch, glide to it and flash it
+  function jumpTo(id) {
+    var n = INDEX[id]; if (!n) return;
+    if (layerName === 'mindmap') setLayer('tree');
+    breakFollow();
+    select(id, true);                       // reveals collapsed parents, selects, glides the camera
+    n.el.classList.remove('mmflash'); void n.el.offsetWidth; n.el.classList.add('mmflash');
+    setTimeout(function () { n.el.classList.remove('mmflash'); }, 1700);
+  }
   function select(id, moveCam) {
     var n = INDEX[id]; if (!n) return;
     selected = id;
@@ -368,7 +378,7 @@
       });
     }
     insp.querySelectorAll('[data-jump]').forEach(function (b) {
-      b.addEventListener('click', function () { select(b.dataset.jump, true); });
+      b.addEventListener('click', function () { jumpTo(b.dataset.jump); });
     });
     insp.querySelectorAll('[data-edit]').forEach(function (d) {
       var before = null, was = null;

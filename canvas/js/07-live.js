@@ -356,7 +356,8 @@
     el.className = 'toast';
     el.innerHTML = '<span class="hd"><b>ANSWERED AHEAD</b><span>' + note.label + ' · TOPIC ' + note.topic +
       '</span></span>' + esc(note.text);
-    el.addEventListener('click', function () { select(note.id); dismiss(el); });
+    el.title = 'Go to ' + note.label;
+    el.addEventListener('click', function () { jumpTo(note.id); dismiss(el); });
     toasts.appendChild(el);
     if (MO && !REDUCED) { el.style.animation = 'none'; pop(el, { x: [24, 0], scale: [0.97, 1] }); }
     // keep at most 3 visible. Count only toasts not already fading out: dismiss() is a no-op
