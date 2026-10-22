@@ -1,7 +1,7 @@
   :root{
     --surface:#FFF; --ink:#15181B; --muted:#868D94; --faint:#AAB1B6;
     --line:#DBDEE0; --hair:#E9EBEC; --accent:#2B5FD9; --accent-soft:#EDF2FE;
-    --red:#C4695A; --amber:#CF9A3A; --green:#4E9A6B;
+    --red:#C4695A; --amber:#CF9A3A; --green:#4E9A6B; --teal:#2A8C9A;   /* teal = a question added mid-interview */
   }
   *{box-sizing:border-box}
   [hidden]{display:none!important}   /* hidden always wins over a component's display:flex */
@@ -86,7 +86,7 @@
   .vtl .hit{pointer-events:all;cursor:pointer}
   .vtl .hit rect:not(.clip),.vtl .pad{fill:transparent}
   .vtl .hit:hover .tk{stroke:var(--accent);stroke-width:2}
-  .vtl .clip{fill:var(--red)} .vtl .ahead{fill:var(--amber)} .vtl .add{fill:var(--green)}
+  .vtl .clip{fill:var(--red)} .vtl .ahead{fill:var(--amber)} .vtl .add{fill:var(--teal)}
   .vtl .pad{fill:transparent}
   .vtl .hit:hover .ahead{fill:#B9801F;transform-box:fill-box;transform-origin:center;transform:scale(1.8)}
   .vtl .hit:hover .clip{fill:#A9483A}
@@ -531,12 +531,12 @@
   .qnote .qx:hover{color:#F3F4F5}
   @keyframes slidedown{from{opacity:0;transform:translate(-50%,-8px)}to{opacity:1;transform:translate(-50%,0)}}
 
-  .tl-mark.q{background:var(--green)}
-  .node.qadded{border-color:var(--green);border-style:dashed;background:rgba(78,154,107,.12)}
-  .node.qadded .id{color:var(--green)}
-  .node.qadded .q{color:#2F6B49}
-  :root[data-theme="dark"] .node.qadded{background:rgba(95,180,131,.16)}
-  :root[data-theme="dark"] .node.qadded .q{color:#9BD9B4}
+  .tl-mark.q{background:var(--teal)}
+  .node.qadded{border-color:var(--teal);border-style:dashed;background:rgba(42,140,154,.10)}
+  .node.qadded .id{color:var(--teal)}
+  .node.qadded .q{color:#1F6670}
+  :root[data-theme="dark"] .node.qadded{background:rgba(77,182,196,.14)}
+  :root[data-theme="dark"] .node.qadded .q{color:#9ADCE5}
   .livenote.q .ln-top:before{background:var(--green)}
 
   .rater{position:absolute;z-index:8;display:none;gap:3px;padding:5px;transform:translateX(-50%);
@@ -756,7 +756,7 @@
   .db-chip{font-size:10.5px;line-height:1.6;padding:0 7px;border-radius:10px;border:1px solid var(--line);color:var(--muted)}
   .db-chip.clip{color:var(--red);border-color:rgba(196,105,90,.4);background:rgba(196,105,90,.07)}
   .db-chip.note{color:#7A5CC7;border-color:rgba(139,92,246,.35);background:rgba(139,92,246,.06)}
-  .db-chip.add{color:var(--green);border:1px dashed var(--green);background:rgba(78,154,107,.07)}
+  .db-chip.add{color:var(--teal);border:1px dashed var(--teal);background:rgba(42,140,154,.07)}
   .db-meta.hubc{justify-content:center;margin-top:10px}
   .db-nt.clip{color:var(--red);border-color:rgba(196,105,90,.4);background:rgba(196,105,90,.07)}
   .db-nt.clip:hover{background:rgba(196,105,90,.15)}
@@ -769,8 +769,8 @@
   .db-recend .sc:hover,.db-recend .sc[aria-expanded="true"]{border-color:var(--accent)}
   .db-recnote{font-size:12px;margin:3px 0 0 3px;color:#6B5BB0}
   .db-recscript{margin:6px 0 0 3px}
-  .db-q.added{border:1px dashed var(--green);border-radius:8px;padding:6px 8px;background:rgba(78,154,107,.05)}
-  .addtag{font-size:10px;color:var(--green);border:1px dashed var(--green);border-radius:8px;padding:0 5px}
+  .db-q.added{border:1px dashed var(--teal);border-radius:8px;padding:6px 8px;background:rgba(42,140,154,.05)}
+  .addtag{font-size:10px;color:var(--teal);border:1px dashed var(--teal);border-radius:8px;padding:0 5px}
   :root[data-theme="dark"] .db-chip.note,:root[data-theme="dark"] .db-nt:not(.clip):not([aria-expanded="true"]){color:#B7A6F2}
   .rc{color:var(--red)}
   .debrief .empty{color:var(--faint);font-style:italic}
@@ -814,7 +814,7 @@
   :root[data-theme="dark"]{
     --surface:#16191C; --ink:#E7EAEC; --muted:#8A9198; --faint:#646B71;
     --line:#2C3238; --hair:#22272C; --accent:#5B8CFF; --accent-soft:#1C2942;
-    --red:#D77B6C; --amber:#D9AC5A; --green:#5FB483;
+    --red:#D77B6C; --amber:#D9AC5A; --green:#5FB483; --teal:#4DB6C4;
   }
   :root[data-theme="dark"] .viewport{background-color:var(--surface);
     background-image:radial-gradient(circle at 1px 1px,#2A2F34 1px,transparent 0)}

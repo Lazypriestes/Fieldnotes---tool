@@ -6,9 +6,40 @@
     try { localStorage.setItem('fnt_files', JSON.stringify(FILES)); localStorage.setItem('fnt_active', ACTIVE); } catch (e) {}
   }
   function saveActive() {
-    var f = FILES.filter(function (x) { return x.id === ACTIVE; })[0];
-    if (f) { f.data = snap(); f.notes = pageNotes.map(serializeNote); persistFiles(); }
+    var f = FILES.filter(function (x) { return x.id === ACTIVE; })[0]; if (!f) return;
+    f.data = snap(); f.notes = pageNotes.map(serializeNote);
+    // another window may have saved other trees since this one loaded: take theirs, replace only ours
+    try {
+      var disk = JSON.parse(localStorage.getItem('fnt_files') || 'null');
+      if (disk && disk.length) {
+        var has = false;
+        FILES = disk.map(function (x) { if (x.id === ACTIVE) { has = true; return f; } return x; });
+        if (!has) FILES.push(f);
+      }
+    } catch (e) {}
+    persistFiles();
   }
+  // Two windows on this computer share the trees: when the other one saves, this one shows it
+  // straight away (instead of later saving its older copy over it). Not during an interview,
+  // and not while you have an edit of your own about to be saved.
+  window.addEventListener('storage', function (e) {
+    if (e.key !== 'fnt_files' || !e.newValue) return;
+    var disk; try { disk = JSON.parse(e.newValue); } catch (_e) { return; }
+    var mine = disk.filter(function (x) { return x.id === ACTIVE; })[0];
+    var busy = live || editing || noteBusy || document.querySelector('[contenteditable="true"]:focus');
+    if (busy) {                                   // keep our active tree, take everything else
+      var cur = FILES.filter(function (x) { return x.id === ACTIVE; })[0];
+      FILES = disk.map(function (x) { return x.id === ACTIVE && cur ? cur : x; });
+      renderFileList(); return;
+    }
+    FILES = disk;
+    if (mine && (mine.data !== snap() || JSON.stringify(mine.notes || []) !== JSON.stringify(pageNotes.map(serializeNote)))) {
+      clearTimeout(filesTimer);
+      if (mine.data !== snap()) restore(mine.data);
+      rebuildPageNotes(mine.notes);
+    }
+    updateFileUI(); renderFileList();
+  });
   function scheduleFileSave() {
     if (live && liveReal && !VIEWER) setTimeout(publishTree, 0);   // keep a joined viewer's tree in step
     if (!ACTIVE) return;

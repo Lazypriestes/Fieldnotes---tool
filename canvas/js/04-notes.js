@@ -182,6 +182,7 @@
     var el = note.el, tx = el.querySelector('.pn-tx');
     tx.addEventListener('focus', function () { note.before = histSnap(); });
     tx.addEventListener('blur', function () {
+      if (!tx.textContent.trim()) { dropEmptyNote(note); return; }   // left empty: it goes away at once
       if (tx.textContent !== note.text && note.before) pushHistory(note.before);   // the edit is one undo step
       note.before = null; note.text = tx.textContent; scheduleFileSave();
     });
@@ -290,6 +291,15 @@
     });
   }
 
+  // an empty note is not kept: removed the moment you click away, and its creation leaves no undo step
+  function dropEmptyNote(note) {
+    if (pageNotes.indexOf(note) < 0) return;
+    note.el.remove();
+    pageNotes = pageNotes.filter(function (p) { return p !== note; });
+    pageNotes.forEach(function (p) { p.links = p.links.filter(function (l) { return l !== note.id; }); });
+    if (note.histMark && undoStack.length === note.histMark) undoStack.pop();
+    drawConns(); scheduleFileSave();
+  }
   function addPageNote(x, y, seed) {
     if (!seed) pushHistory();
     var note = { id: (seed && seed.id) || ('pn' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36)),
@@ -309,7 +319,7 @@
       '<span class="pn-link" title="Drag onto a question to connect this note"></span>';
     note.el = el; world.appendChild(el); paintEye(note); sizeNote(note);
     wireNote(note); pageNotes.push(note); updateCollapse(note); drawConns();
-    if (!seed) { scheduleFileSave(); setTimeout(function () { el.querySelector('.pn-tx').focus(); }, 30); }
+    if (!seed) { note.histMark = undoStack.length; scheduleFileSave(); setTimeout(function () { el.querySelector('.pn-tx').focus(); }, 30); }
     return note;
   }
   function addPageNoteCentered() {
@@ -331,5 +341,9 @@
     b.setAttribute('aria-label', b.title); b.setAttribute('aria-pressed', String(!note.folded));
   }
   function clearPageNotes() { pageNotes.forEach(function (n) { n.el.remove(); }); pageNotes = []; if (conns) conns.innerHTML = ''; }
-  function rebuildPageNotes(arr) { clearPageNotes(); (arr || []).forEach(function (s) { addPageNote(s.x, s.y, s); }); drawConns(); }
+  function rebuildPageNotes(arr) {
+    clearPageNotes();
+    (arr || []).forEach(function (s) { if ((s.text || '').trim()) addPageNote(s.x, s.y, s); });   // empty ones aren't kept
+    drawConns();
+  }
 
