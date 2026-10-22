@@ -649,15 +649,6 @@
     color:var(--faint);font-weight:400;margin-bottom:2px}
   .empty{padding:0 14px;font-size:11px;color:var(--faint);line-height:1.5}
 
-  .foot{display:flex;align-items:center;gap:14px;padding:7px 14px;border-top:1px solid var(--hair);
-    font-size:11px;color:var(--faint);flex:none}
-  .foot .lg{display:flex;align-items:center;gap:6px}
-  .foot .sw{width:16px;height:8px;border-radius:2px;border:1px solid var(--line)}
-  .foot .sw.o{background:var(--accent-soft);border-color:#CBDBFB}
-  .foot .sw.p{border-style:dotted}
-  .foot .sw.r,.foot .sw.am,.foot .sw.g{border:none;width:3px;height:12px;border-radius:2px}
-  .foot .sw.r{background:var(--red)} .foot .sw.am{background:var(--amber)} .foot .sw.g{background:var(--green)}
-  .foot .spacer{flex:1}
 
   .scrim{position:absolute;inset:0;background:rgba(21,24,27,.14);z-index:40;display:flex;justify-content:center;padding-top:80px}
   .scrim[hidden]{display:none}
@@ -699,6 +690,7 @@
   .debrief{position:absolute;inset:0;z-index:4;display:none;overflow:hidden;cursor:grab;touch-action:none;
     padding:8px 28px 130px 92px;background:var(--surface);border-top:128px solid var(--surface)}   /* scroll area starts below the tree menu */
   .app.layer-mindmap .debrief{display:block}
+  .app.layer-mindmap .spine{display:none}   /* topic tabs steer the tree; the debrief already shows every topic */
   .app.layer-mindmap .world,.app.layer-mindmap .zoomctl{visibility:hidden}
   .debrief.panning{cursor:grabbing}
   .db-wrap{transform-origin:0 0;position:relative;display:grid;grid-template-columns:minmax(0,1fr) 210px minmax(0,1fr);
