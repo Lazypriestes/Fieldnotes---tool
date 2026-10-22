@@ -231,14 +231,15 @@
     function at(i) { return fmtTime(sess.tbase + (i > 0 ? sess.cum[i - 1] : 0) / 1000); }
     function tip(t) { return '<title>' + esc(t) + '</title>'; }
     var last = live && reviewing ? viewIdx : sess.lastIdx;   // reviewing: nothing after the moment you're on
-    var x = VTL_X, top = topics()[0].y + 4, nowQ = live ? current : mmCurAt(sess, last);
-    var yEnd = (nowQ && yOf(nowQ)) || top, p = [];
-    p.push('<line class="ln" x1="' + x + '" y1="' + top + '" x2="' + x + '" y2="' + yEnd + '"/>');
+    var x = VTL_X, nowQ = live ? current : mmCurAt(sess, last);
+    var yEnd = nowQ ? yOf(nowQ) : null, p = [], ys = yEnd != null ? [yEnd] : [];
+    var lineAt = p.length; p.push('');                    // the line goes in once its ends are known
     var prev = null;                                      // a tick each time the question changes
     for (var i = 0; i <= last; i++) {
       var c = sess.steps[i] && sess.steps[i].cur;
       if (!c || c === prev) continue;
       prev = c; var y = yOf(c); if (y == null) continue;
+      ys.push(y);
       p.push('<g class="hit" data-idx="' + i + '">' + tip(mmQLabel(INDEX[c]) + ' asked · ' + at(i)) +
         '<rect x="' + (x + 1) + '" y="' + (y - 5) + '" width="16" height="10"/><line class="tk" x1="' + (x + 3) + '" y1="' + y + '" x2="' + (x + 13) + '" y2="' + y + '"/></g>');
     }
@@ -265,6 +266,10 @@
       p.push('<g class="hit" data-idx="' + m.idx + '">' + tip('Question added: ' + m.text) +
         '<circle class="add" cx="' + (x + 32) + '" cy="' + y + '" r="3.5"/></g>');
     });
+    // from the first question asked to the one being asked now (or the furthest reached,
+    // if the interview went back up the tree)
+    if (ys.length) p[lineAt] = '<line class="ln" x1="' + x + '" y1="' + Math.min.apply(null, ys) + '" x2="' + x + '" y2="' + Math.max.apply(null, ys) + '"/>';
+    if (yEnd == null) yEnd = ys.length ? ys[ys.length - 1] : 0;
     if (live) p.push('<circle class="nowring" cx="' + x + '" cy="' + yEnd + '" r="6"/><circle class="now" cx="' + x + '" cy="' + yEnd + '" r="4.5"/>');
     vtl.innerHTML = p.join('');
   }
