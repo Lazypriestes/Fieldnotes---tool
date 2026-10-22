@@ -748,6 +748,15 @@
   .db-quote .tag{display:inline-block;margin-left:6px;font-size:10px;color:var(--amber)}
   .db-quote .also{display:block;font-size:10px;color:var(--faint);margin-top:2px}
   .db-q .seen{font-size:11px;color:var(--faint);margin:3px 0 0 11px}
+  .db-qh{display:flex;align-items:flex-start;gap:8px}
+  .db-qh .ql{flex:1;min-width:0}
+  .db-nt{flex:none;font-size:10.5px;line-height:1.5;color:#7A5CC7;border:1px solid rgba(139,92,246,.35);border-radius:10px;
+    padding:0 7px;background:rgba(139,92,246,.06);transition:background .15s,color .15s}
+  .db-nt:hover{background:rgba(139,92,246,.14)}
+  .db-nt[aria-expanded="true"]{background:#8B5CF6;border-color:#8B5CF6;color:#FFF}
+  .db-notes{margin:6px 0 0 11px;display:grid;gap:5px;border-left:2px solid #8B5CF6;padding:1px 0 1px 9px}
+  .db-hubnotes{margin-top:12px}
+  .db-hub .db-notes{text-align:left;margin-left:0}
   .db-q .more{font-size:10.5px;color:var(--faint);margin:4px 0 0 11px}
   .db-open{display:flex;flex-wrap:wrap;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
   .db-open span{margin-right:2px}
@@ -1626,9 +1635,21 @@
       });
   }
 
-  var dbOpen = null, dbScript = {}, dbEl = null, dbFlip = null;
+  var dbOpen = null, dbScript = {}, dbEl = null, dbFlip = null, dbNotesOpen = {};
+  // a small "✎ 2" pill on a question: its notes stay folded away until you open them
+  function dbNoteBtn(key, n, what) {
+    var on = !!dbNotesOpen[key];
+    return '<button class="db-nt" data-dbnotes="' + key + '" aria-expanded="' + on + '" title="' + (on ? 'Hide' : 'Show') + ' notes">✎ ' + n +
+      (what ? ' ' + (n === 1 ? 'note' : 'notes') + ' ' + what : '') + '</button>';
+  }
+  function dbNoteList(key, list) {
+    return '<div class="db-notes" data-notesfor="' + key + '">' + list.map(function (nt) {
+      return '<div class="db-note">' + anonHTML(nt.text) + (nt.when ? '<span class="when">' + nt.when + '</span>' : '') + '</div>';
+    }).join('') + '</div>';
+  }
   function dbData(sess) {
-    var list = topics().map(function (t) { return { t: t, answers: [], clips: [], notes: [], pnotes: [] }; });
+    // notes hang on the question they were taken at (or linked to): d.qnotes[questionId] = [...]
+    var list = topics().map(function (t) { return { t: t, answers: [], clips: [], qnotes: {}, nNotes: 0 }; });
     var byId = {}, loose = [];
     list.forEach(function (d) { byId[d.t.id] = d; });
     function dOf(qid) { var q = INDEX[qid], t = q && topicOf(q); return t ? byId[t.id] : null; }
@@ -1659,15 +1680,16 @@
       });
       sess.marks.forEach(function (m) {
         if (m.q) return;                    // added questions are real questions in the tree already
-        var d = dOf(m.host || mmCurAt(sess, m.idx));
-        if (d) d.notes.push(m); else loose.push({ text: m.text });
+        var qid = m.host || mmCurAt(sess, m.idx), d = dOf(qid);
+        var nt = { text: m.text, when: fmtTime(sess.tbase + (sess.cum[m.idx] || 0) / 1000) };
+        if (d) { (d.qnotes[qid] = d.qnotes[qid] || []).push(nt); d.nNotes++; } else loose.push(nt);
       });
     }
     pageNotes.forEach(function (n) {
       if (!(n.text || '').trim()) return;
-      var d = null;
-      n.links.some(function (l) { d = dOf(l); return !!d; });
-      if (d) d.pnotes.push(n); else loose.push({ text: n.text });
+      var d = null, qid = null;
+      n.links.some(function (l) { d = dOf(l); qid = l; return !!d; });
+      if (d) { (d.qnotes[qid] = d.qnotes[qid] || []).push({ text: n.text }); d.nNotes++; } else loose.push({ text: n.text });
     });
     return { topics: list, loose: loose };
   }
@@ -1689,7 +1711,7 @@
         : v === null ? '<span class="empty">Summary unavailable. Open the topic to read the answers.</span>'
         : (SUM_LAST[t.id] ? esc(SUM_LAST[t.id]) + ' <span class="pending">updating…</span>' : '<span class="pending">Summarizing…</span>');
     }
-    var nNotes = d.notes.length + d.pnotes.length, meta = [];
+    var nNotes = d.nNotes, meta = [];
     if (steps.length) meta.push(steps.length + (steps.length === 1 ? ' answer' : ' answers'));
     if (d.clips.length) meta.push('<span class="rc">●</span> ' + d.clips.length + (d.clips.length === 1 ? ' clip' : ' clips'));
     if (nNotes) meta.push('✎ ' + nNotes + (nNotes === 1 ? ' note' : ' notes'));
@@ -1712,13 +1734,17 @@
     // name the others on it, instead of repeating the same sentence under each question
     var shown = {}, qsOf = {};
     d.answers.forEach(function (a) { (qsOf[a.i] = qsOf[a.i] || []).push(a.qid); });
+    var inTopic = {};
+    qsAll.forEach(function (q) { inTopic[q.id] = 1; });
     qsAll.forEach(function (q) {
-      var as = byQ[q.id];
-      if (!as) { if (q.kind !== 'opener' && q.depth === 1 && dbState(sess)[q.id] !== 'green') open.push(q); return; }
+      var as = byQ[q.id], ns = d.qnotes[q.id];
+      if (!as && !ns) { if (q.kind !== 'opener' && q.depth === 1 && dbState(sess)[q.id] !== 'green') open.push(q); return; }
+      h += '<div class="db-q"><div class="db-qh"><button class="ql" data-goto="' + q.id + '" title="Show on the tree"><b>' +
+        esc(mmQLabel(q)) + '</b> ' + esc(q.text) + '</button>' + (ns ? dbNoteBtn(q.id, ns.length) : '') + '</div>';
+      var tail = ns && dbNotesOpen[q.id] ? dbNoteList(q.id, ns) : '';
+      if (!as) { h += '<div class="seen">Not answered yet</div>' + tail + '</div>'; return; }
       var fresh = as.filter(function (a) { return !shown[a.i]; });
-      h += '<div class="db-q"><button class="ql" data-goto="' + q.id + '" title="Show on the tree"><b>' +
-        esc(mmQLabel(q)) + '</b> ' + esc(q.text) + '</button>';
-      if (!fresh.length) { h += '<div class="seen">Answered in a reply above</div></div>'; return; }
+      if (!fresh.length) { h += '<div class="seen">Answered in a reply above</div>' + tail + '</div>'; return; }
       h += fresh.slice(0, 2).map(function (a) {
         shown[a.i] = 1;
         var also = qsOf[a.i].filter(function (id) { return id !== q.id && INDEX[id]; })
@@ -1727,8 +1753,16 @@
           (a.ahead ? '<span class="tag">answered ahead</span>' : '') +
           (also.length ? '<span class="also">Also answers ' + esc(also.join(', ')) + '</span>' : '') + '</div>';
       }).join('') +
-        (fresh.length > 2 ? '<div class="more">+' + (fresh.length - 2) + ' more on the tree</div>' : '') + '</div>';
+        (fresh.length > 2 ? '<div class="more">+' + (fresh.length - 2) + ' more on the tree</div>' : '') + tail + '</div>';
     });
+    // notes taken on the topic itself rather than one of its questions
+    var other = [];
+    Object.keys(d.qnotes).forEach(function (id) { if (!inTopic[id]) other = other.concat(d.qnotes[id]); });
+    if (other.length) {
+      var k = 'T' + t.id;
+      h += '<div class="db-q"><div class="db-qh"><span class="ql">On the topic as a whole</span>' + dbNoteBtn(k, other.length) + '</div>' +
+        (dbNotesOpen[k] ? dbNoteList(k, other) : '') + '</div>';
+    }
     if (!h) h = '<div class="empty">No answers in this topic yet.</div>';
     if (open.length) h += '<div class="db-open"><span>Still open</span>' + open.map(function (q) {
       return '<button data-goto="' + q.id + '" title="' + esc(q.text) + '">' + esc(q.label) + '</button>';
@@ -1747,8 +1781,6 @@
       }).join('') + '</div>';
       h += '</div>';
     });
-    d.notes.forEach(function (m) { h += '<div class="db-note">✎ ' + anonHTML(m.text) + '<span class="when">' + fmtTime(sess.tbase + (sess.cum[m.idx] || 0) / 1000) + '</span></div>'; });
-    d.pnotes.forEach(function (n) { h += '<div class="db-note">✎ ' + anonHTML(n.text) + '</div>'; });
     return h;
   }
   function renderMindmapCards() {
@@ -1761,7 +1793,7 @@
     var sess = mmSession(); mmSig = mmSignature(sess);
     var data = dbData(sess), all = 0, sc = 0, nClips = 0, nNotes = data.loose.length;
     topics().forEach(function (t) { var s = dbStatus(t, sess); all += s.n; sc += s.g + s.a * .4; });
-    data.topics.forEach(function (d) { nClips += d.clips.length; nNotes += d.notes.length + d.pnotes.length; });
+    data.topics.forEach(function (d) { nClips += d.clips.length; nNotes += d.nNotes; });
     var mins = sess && sess.lastIdx >= 0 ? Math.round((sess.cum[sess.lastIdx] || 0) / 60000) : 0;
     var hubMeta = [];
     if (sess && sess.lastIdx >= 0) hubMeta.push(mins + ' min');
@@ -1771,7 +1803,8 @@
       '<div class="pct">' + (all ? Math.round(sc / all * 100) : 0) + '%</div><div class="hs">covered</div>' +
       (hubMeta.length ? '<div class="hm">' + hubMeta.join(' · ') + '</div>' : '') +
       (!sess ? '<div class="hm">Start an interview or open a saved session to fill this in.</div>' : '') +
-      (data.loose.length ? '<div class="hn2">Other notes</div>' + data.loose.map(function (n) { return '<div class="db-note">✎ ' + anonHTML(n.text) + '</div>'; }).join('') : '') +
+      (data.loose.length ? '<div class="db-hubnotes">' + dbNoteBtn('loose', data.loose.length, 'not tied to a question') + '</div>' +
+        (dbNotesOpen.loose ? dbNoteList('loose', data.loose) : '') : '') +
       '<div class="hx">Names anonymized</div></div>';
     var cards = data.topics.map(function (d) { return dbCard(d, sess); });
     var half = Math.ceil(cards.length / 2);
@@ -1851,6 +1884,13 @@
     if (!e.target.closest || !e.target.closest('.debrief')) return;
     var g = e.target.closest('[data-goto]');
     if (g) { mmGoto(g.getAttribute('data-goto')); return; }
+    var nb = e.target.closest('[data-dbnotes]');
+    if (nb) {
+      var k = nb.dataset.dbnotes;
+      dbFlip = dbRects(); dbNotesOpen[k] = !dbNotesOpen[k]; renderMindmapCards();
+      if (dbNotesOpen[k]) pop(dbEl.querySelector('[data-notesfor="' + k + '"]'), { y: [-5, 0] }, { duration: 0.22 });
+      return;
+    }
     var sc = e.target.closest('[data-dbscript]');
     if (sc) { dbScript[sc.dataset.dbscript] = !dbScript[sc.dataset.dbscript]; renderMindmapCards(); return; }
     var tg = e.target.closest('[data-dbtoggle]');
